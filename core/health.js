@@ -1,0 +1,38 @@
+/**
+ * Name:	System Health Utils
+ * Desc:    系统运行状态检查
+ * Author:	LostAbaddon
+ * Version:	0.0.1
+ * Date:	2017.10.02
+ */
+
+var os = require('os');
+
+const getCPUUsage = (duration, cb) => new Promise((resolve, reject) => {
+	var last = process.cpuUsage();
+	var start = process.hrtime();
+	setTimeout(() => {
+		var result = process.cpuUsage(last);
+		var end = process.hrtime(start);
+		var timespend = end[0] + end[1] / 1000000000; // nanosecond
+		var user = result.user / 1000000, sys = result.system / 1000000; // microsecond
+		result = {user, sys, total: timespend};
+		resolve(result);
+		if (!!cb) cb(result);
+	}, duration || 1000);
+});
+
+var format = num => (Math.round(num * 10000) / 100) + '%';
+var getHealth = async () => {
+	var cpu = await getCPUUsage();
+	var mem = process.memoryUsage();
+	var result = {
+		cpu: (cpu.user + cpu.sys) / cpu.total,
+		mem: (mem.rss + mem.heapTotal + mem.external) / os.totalmem()
+	};
+	return result;
+};
+
+module.exports = getHealth;
+global.Utils = global.Utils || {};
+global.Utils.getHealth = getHealth;
