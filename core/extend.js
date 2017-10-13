@@ -30,6 +30,12 @@ String.random = (len) => {
 	}
 	return rnd;
 };
+String.blank = (len, block) => {
+	block = block || ' ';
+	var line = '';
+	for (let i = 0; i < len; i ++) line += block;
+	return line;
+};
 
 // Object extends
 
