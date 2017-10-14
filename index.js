@@ -467,10 +467,6 @@ var rtmLauncher = clp({
 .add('create [...files] >> 创建文件列表')
 .add('make [...folders] >> 创建文件夹列表')
 .add('copy <source> <target> >> 从外源复制文件进来')
-
-.add('show [text]')
-.add('play')
-
 .on('list', (params, all, command) => {
 	var group = params.group;
 	var path = params.path;
@@ -519,33 +515,6 @@ var rtmLauncher = clp({
 	else if (!target) command.showError('缺少目标文件路径！');
 	command.showHint('复制文件 ' + source + ' 到 ' + target + ' 中...');
 })
-
-.on('show', (params, all, command) => {
-	command.showHint(params.text);
-})
-.on('play', async (params, all, command) => {
-	all.nohint = true;
-	command.showHint('游戏开始喽~~~~');
-	await command.cli.waitEnter();
-	await command.cli.waitEnter('再来一次！！！', 'a');
-	var list = ['烂人', 'Bitch', 'Whore', 'Pussy', 'Slut', '贱人', '烂人', 'Bitch', 'Whore', 'Pussy', 'Slut', '贱人'];
-	var select = await command.cli.waitOption('请选择徐琼斐的特性：', list);
-	command.showHint('您的选择是：' + select + ' / ' + list[select]);
-	var percents = [], total = 12;
-	for (let i = 0; i < total; i ++) percents[i] = 0;
-	var update = () => {
-		var notdone = percents.some(p => p < 1);
-		for (let i = 0; i < total; i ++) {
-			percents[i] += Math.random() / 10;
-			command.cli.updateProcessbar(i, percents[i]);
-		}
-		if (notdone) setTimeout(update, 1000);
-	};
-	setTimeout(update, 1000);
-	await command.cli.waitProcessbar('进度条啦啦啦', 80, total);
-	command.showHint('FUCK!!!');
-})
-
 .on('exit', (param, command) => {
 	param.msg = 'Slow Is A Bitch!!!';
 });
