@@ -39,6 +39,7 @@ const EventEmitter = require('events');
 
 require('./extend');
 const setStyle = require('./setConsoleStyle');
+const cli = require('./cli');
 
 const isDate = v => v.match(/^\d{2,4}-\d{1,2}-\d{1,2}(\/\d{1,2}:\d{1,2}(:\d{1,2}(\.\d+)?)?)?$/);
 const isString = v => typeof v === 'string' || v instanceof String;
@@ -419,7 +420,7 @@ class Quest {
 		});
 		result.params = [];
 		Object.keys(params).map(p => result.params.push({ name: p, value: params[p]}));
-		options.map(o => result.params.push({ name: o.name, value: o.params }));
+		options.map(o => result.params.push({ name: o.name, params: o.params }));
 		return result;
 	}
 	has (option) { // 是否包含指定名称的option
@@ -822,68 +823,90 @@ const GenerateParamHelp = (param, mode, defval, range, section) => {
  * 		}
  * }
  */
+const CommandHistorySize = 100;
 const DefaultHint = {
-	prefix: '> ',
-	response: ': ',
-	error: ': ',
-	welcome: 'Aloha Kosmos!',
-	byebye: 'Bye, Earth...'
+	hint: setStyle('> ', 'green bold'),
+	answer: setStyle(': ', 'green bold'),
+	error: setStyle(': ', 'magenta bold'),
+	errorStyle: 'magenta',
+	welcome: setStyle('欢迎来到字符的黑暗世界~~', 'yellow underline'),
+	byebye: setStyle('黑暗，即将再临……', 'magenta bold underline'),
+	no_such_command: setStyle('没有该命令！', 'red bold')
+};
+const paramConvert = param => {
+	var result = { name: param.quest, value: {} };
+	param.params.map(p => {
+		if (!!p.params) {
+			result.value[p.name] = true;
+			for (let q in p.params) {
+				result.value[q] = p.params[q];
+			}
+		}
+		else {
+			result.value[p.name] = p.value;
+		}
+	});
+	return result;
+};
+const paramGroupConvert = params => {
+	var convert = { mission: [] };
+	params.map(param => {
+		param = paramConvert(param);
+		if (param.name === 'global') {
+			for (let p in param.value) {
+				convert[p] = param.value[p];
+			}
+		}
+		else {
+			convert.mission.push(param);
+		}
+	});
+	Object.defineProperty(convert, 'raw', { value: params });
+	return convert;
 };
 const Parser = config => {
 	var em = new EventEmitter();
+	var rl = {
+		hint: () => {},
+		answer: text => console.log(hint.answer + text),
+		error: text => console.error(hint.error + setStyle(text, hint.errorStyle))
+	};
 	var command = Command.parse(config.command);
+
 	var parse = command.parse;
 	var title = config.title || 'Command Line Parser';
 	var hint = config.hint || DefaultHint;
-	var showPre = color => process.stdin.write(setStyle(hint.prefix, [color || 'green', 'bold']));
-	var showHint = text => process.stdout.write(setStyle(hint.response, ['green', 'bold']) + setStyle(text, 'yellow') + '\n');
-	var showError = text => process.stderr.write(setStyle(hint.error, ['green', 'bold']) + setStyle(text, 'magenta') + '\n');
-	hint.prefix = hint.prefix || DefaultHint.prefix;
-	hint.response = hint.response || DefaultHint.response;
+	hint.hint = hint.hint || DefaultHint.hint;
+	hint.answer = hint.answer || DefaultHint.answer;
 	hint.error = hint.error || DefaultHint.error;
+	hint.errorStyle = hint.errorStyle || DefaultHint.errorStyle;
 	hint.welcome = hint.welcome || DefaultHint.welcome;
 	hint.byebye = hint.byebye || DefaultHint.byebye;
+	hint.no_such_command = hint.no_such_command || DefaultHint.no_such_command;
+
+	command.showPrefix = text => rl.hint(text);
+	command.showHint = text => rl.answer(text);
+	command.showError = text => rl.error(text);
+
 	command.parse = cmds => {
 		var helpMode = !!(' ' + cmds + ' ').match(/ (\-\-help|\-h) /);
 		if (helpMode) {
 			cmds = '--help ' + (' ' + cmds + ' ').replace(/ (\-\-help|\-h) /g, ' ').trim();
 		}
 		var result = parse.call(command, cmds);
-		var params = [], gp, total = result.length;
-		result.map(r => {
-			if (r.quest === 'global') {
-				gp = r.params;
-				// gp.some(p => {
-				// 	if (p.name === 'help' && !!p.value) helpMode = true;
-				// });
-			}
-			params.push({
-				quest: r.quest,
-				params: {
-					quest: r.quest,
-					command,
-					total,
-					local: r.params
-				}
-			});
-		});
+		result = paramGroupConvert(result);
 		if (helpMode) {
-			var helpContent = Parser.Helper.command(command, result, title);
+			var helpContent = Parser.Helper.command(command, result.raw, title);
 			console.log(helpContent);
+			if (command.showPrefix) command.showPrefix();
 		}
 		else {
-			params.map(p => {
-				p.params.global = gp;
-				em.emit(p.quest, p.params);
+			em.emit('command', result, command);
+			result.mission.map(mission => {
+				em.emit(mission.name, mission.value, result, command);
 			});
 		}
-		em.emit('finish', {
-			quest: 'finish',
-			command,
-			total,
-			local: gp,
-			global: gp
-		});
+		em.emit('done', result, command);
 		return result;
 	};
 	command.on = (...args) => {
@@ -899,41 +922,57 @@ const Parser = config => {
 			command.parse(args);
 		}
 		if (config.mode === 'cli') {
-			process.stdin.setEncoding('utf8');
-			showHint(hint.welcome);
-			showPre();
-			process.stdin.on('data', chunk => {
-				if (!chunk) return;
-				chunk = chunk.toString().replace(/(^[\s\n\r]*|[\s\n\r]*$)/g, '');
-				if (chunk.trim() === 'quit') {
-					showHint(hint.byebye);
-					process.stdin.destroy();
+			rl = cli({
+				historySize: CommandHistorySize,
+				hints: hint
+			})
+			.onRequest(cmd => {
+				var shortcmd = cmd.replace(/ +/g, ' ');
+				if (cmd === 'exit') {
+					rl.close();
+					process.exit();
 				}
-				else if (chunk.trim().replace(/ +/g, ' ') === 'quit -s') {
-					process.stdin.destroy();
+				else if (shortcmd === 'exit -s') {
+					rl.close(true);
+					process.exit();
+				}
+				else if (cmd === 'quit') {
+					rl.close();
+				}
+				else if (shortcmd === 'quit -s') {
+					rl.close(true);
 				}
 				else {
-					if (chunk === 'help') chunk = '--help';
+					if (cmd === 'help') cmd = '--help';
 					try {
-						command.parse(chunk);
+						let result = command.parse(cmd);
+						if (!result) return { msg: hint.no_such_command };
+						if (result.length <= 1 && result[0].quest === 'global' && result[0].params.length === 0) return { msg: hint.no_such_command };
+						return { nohint: result.nohint, msg: '' };
 					}
 					catch (err) {
-						showError(err.message);
+						rl.error(err.message);
+						// console.error(err);
 					}
-					showPre();
 				}
+				return { msg: '' };
+			})
+			.onQuit(cli => {
+				var result = { msg: '' };
+				em.emit('exit', result, command);
+				if (!!result.msg && result.msg.length > 0) cli.error(result.msg);
 			});
+			command.cli = rl;
+
+			rl.answer('游戏开始喽~~~~');
 		}
 		return command;
 	};
 	command.terminate = silence => {
 		if (config.mode !== 'cli') return;
 		if (!silence) showHint(hint.byebye);
-		process.stdin.destroy();
+		rl.close();
 	};
-	command.showPrefix = showPre;
-	command.showHint = showHint;
-	command.showError = showError;
 	return command;
 };
 Parser.Params = Params;

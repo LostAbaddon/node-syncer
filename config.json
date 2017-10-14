@@ -13,5 +13,15 @@
 		"node_modules",
 		"package-lock.json"
 	],
-	"monitor": 600
+	"group": {
+		"work": [
+			"~/Library/Mobile Documents/com~apple~CloudDocs/Documents/Dropbox",
+			"~/Dropbox",
+			"~/Library/Mobile Documents/com~apple~CloudDocs/Documents"
+		],
+		"core": [
+		]
+	},
+	"monitor": 600,
+	"deamonMode": false
 }

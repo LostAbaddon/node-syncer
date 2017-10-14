@@ -3,7 +3,7 @@
  * Desc:    命令行样式优化
  * Author:	LostAbaddon
  * Version:	0.0.1
- * Date:	2017.09.27
+ * Date:	2017.10.14
  *
  * 基于ansi-style库和chalk库
  */
@@ -81,11 +81,18 @@ for (let groupName of Object.keys(styles)) {
 styles.color.close = '\u001B[39m';
 styles.bgColor.close = '\u001B[49m';
 
-module.exports = (msg, style) => {
+const setStyle = (msg, style) => {
 	if (style instanceof String || typeof style === 'string') {
-		style = styles[style];
-		if (!style || !style.open || !style.close) return msg;
-		return style.open + msg + style.close;
+		style = style.trim();
+		if (style.indexOf(' ') >= 0) {
+			style = style.split(/ +/);
+			return setStyle(msg, style);
+		}
+		else {
+			style = styles[style];
+			if (!style || !style.open || !style.close) return msg;
+			return style.open + msg + style.close;
+		}
 	}
 	else for (let s of style) {
 		s = styles[s];
@@ -94,4 +101,5 @@ module.exports = (msg, style) => {
 	}
 	return msg;
 };
+module.exports = setStyle;
 module.exports.styles = styles;

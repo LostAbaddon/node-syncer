@@ -24,6 +24,56 @@ const setStyle = require('./core/setConsoleStyle');
 const loglev = (process.env.NODE_ENV === 'production' || process.env.NODE_ENV === 'prod') ? 3 : 1;
 const logger = global.logger(loglev);
 const configPath = process.cwd() + '/config.json';
+const deamonDuration = 60;
+
+class Group {
+	constructor (name) {
+
+	}
+}
+
+var syncConfig = {
+	file: configPath,
+	ignore: false,
+	deamon: false,
+	duration: null,
+	web: false,
+	ignores: [],
+	group: {}
+};
+
+var readJSON = file => new Promise((res, rej) => {
+	fs.readFile(file, (err, data) => {
+		if (!!err) {
+			rej(err);
+			return;
+		}
+		var content = data.toString();
+		try {
+			content = JSON.parse(content);
+		}
+		catch (e) {
+			rej(e);
+			return;
+		}
+		res(content);
+	});
+});
+
+var launchMission = () => {
+	console.log(syncConfig);
+};
+
+
+
+
+
+
+
+
+
+
+
 
 class Victim {
 	constructor (path, file, node) {
@@ -38,16 +88,9 @@ class Victim {
 
 var targetPaths = [], ignoreRuls = [];
 var ignoreMissing = false;
-var watchers = [];
 var deamonMode = false;
+var watchers = [];
 var syncerTimer;
-var launchConfig = {
-	file: configPath,
-	ignore: false,
-	deamon: false,
-	duration: 1,
-	web: false
-};
 
 var readConfig = () => {
 	fs.readFile(configPath, (err, data) => {
@@ -338,13 +381,20 @@ var checkPath = (paths, ignores, folder, node) => {
 	return result;
 };
 
+
+
+
+
+
+
+
+
+
+
+
+
 process.on('unhandledRejection', (reason, p) => {
 	logger.error('Unhandled Rejection:', reason);
-	// logger.error(p);
-});
-process.on('rejectionhandled', p => {
-	logger.log('Rejection Handled:');
-	logger.info(p);
 });
 process.on('uncaughtException', err => {
 	logger.error('Uncaught Exception:');
@@ -363,33 +413,39 @@ var cmdLauncher = clp({
 .describe('多文件夹自动同步者。\n' + setStyle('当前版本：', 'bold') + 'v0.1.0')
 .addOption('--config -c <config> >> 配置文档地址')
 .addOption('--ignore -i >> 是否忽略删除')
-.addOption('--deamon -d [duration=1] >> 是否启用监控模式，可配置自动监控时间间隔，默认时间为一分钟')
+.addOption('--deamon -d [duration] >> 是否启用监控模式，可配置自动监控时间间隔，默认时间为一分钟')
 .addOption('--silence -s >> 不启用命令行控制面板')
-.addOption('--web -w >> 启用Web后台模式【待开发】')
-.on('global', params => {
-	params.local.map(opt => {
-		if (opt.name === 'config') {
-			launchConfig.file = opt.value.config;
-		}
-		else if (opt.name === 'ignore') {
-			launchConfig.ignore = true;
-		}
-		else if (opt.name === 'deamon') {
-			launchConfig.deamon = true;
-			launchConfig.duration = opt.value.duration
-		}
-		else if (opt.name === 'silence') {
-			launchConfig.deamon = false;
-		}
-		else if (opt.name === 'web') {
-			launchConfig.web = true;
-			rtmLauncher.showError('Web服务模式暂未开启，敬请期待~~');
-		}
-	});
-	console.dir(launchConfig, config);
+.addOption('--web -w >> 启用Web后台模式' + setStyle('【待开发】', ['green', 'bold']))
+.on('command', params => {
+	if (!!params.config) syncConfig.file = params.config;
+	if (!!params.ignore) syncConfig.ignore = params.ignore;
+	if (!!params.deamon) syncConfig.deamon = params.deamon;
+	if (!isNaN(params.duration)) syncConfig.duration = params.duration * 60;
+	if (!!params.silence) syncConfig.deamon = params.silence;
+	if (!!params.web) {
+		syncConfig.web = params.web;
+		rtmLauncher.showError('Web服务模式暂未开启，敬请期待~~');
+	}
 })
-.on('finish', params => {
-	if (launchConfig.deamon && !params.local.some(cmd => cmd.name === 'help')) {
+.on('done', async params => {
+	if (params.help) return;
+	var config;
+	try {
+		config = await readJSON(syncConfig.file);
+	}
+	catch (err) {
+		try {
+			config = await readJSON(configPath);
+		}
+		catch (e) {
+			config = {};
+		}
+	}
+	syncConfig.deamon = syncConfig.deamon || config.deamonMode || false;
+	syncConfig.duration = syncConfig.duration || config.monitor || deamonDuration;
+	syncConfig.ignores = config.ignore || [];
+	syncConfig.group = config.group || {};
+	if (syncConfig.deamon) {
 		rtmLauncher.launch();
 	}
 });
@@ -399,125 +455,102 @@ var rtmLauncher = clp({
 	title: '同步者 v0.1.0',
 	mode: 'cli',
 	hint: {
-		welcome: '欢迎来到同步空间~',
-		byebye: '世界，终结了。。。'
+		welcome: setStyle('欢迎来到同步空间~', 'yellow underline bold'),
+		byebye: setStyle('世界，终结了。。。', 'magenta bold')
 	}
 })
 .describe('多文件夹自动同步者。\n' + setStyle('当前版本：', 'bold') + 'v0.1.0')
 .add('list >> 显示当前分组同步信息')
 .addOption('--group -g <group> >> 指定group标签后可查看指定分组下的源情况')
+.addOption('--files -f <path> >> 查看指定路径下的文件列表')
 .add('delete [...files] >> 删除文件列表')
 .add('create [...files] >> 创建文件列表')
 .add('make [...folders] >> 创建文件夹列表')
 .add('copy <source> <target> >> 从外源复制文件进来')
-.on('list', params => {
-	var group = null;
-	params.local.some(opt => {
-		if (opt.name === 'group') {
-			group = opt.value.group;
-			return true;
-		}
-	});
+
+.add('show [text]')
+.add('play')
+
+.on('list', (params, all, command) => {
+	var group = params.group;
+	var path = params.path;
 	if (!group) {
-		params.command.showHint('显示所有分组')
+		command.showHint('显示所有分组');
 	}
 	else {
-		params.command.showHint('显示分组 ' + group + ' 下的源情况')
+		if (!path) {
+			command.showHint('显示分组 ' + group + ' 下的源情况');
+		}
+		else {
+			command.showHint('显示分组 ' + group + ' 下的目录文件： ' + path);
+		}
 	}
 })
-.on('delete', params => {
-	var files = null;
-	params.local.some(opt => {
-		if (opt.name === 'files') {
-			files = opt.value;
-			return true;
-		}
-	});
+.on('delete', (params, all, command) => {
+	var files = params.files;
 	if (!files || files.length === 0) {
-		params.command.showError('缺少文件参数！');
+		command.showError('缺少文件参数！');
 	}
 	else {
-		files.map(f => params.command.showHint('文件 ' + f + ' 删除ing...'));
+		files.map(f => command.showHint('文件 ' + f + ' 删除ing...'));
 	}
 })
-.on('create', params => {
-	var files = null;
-	params.local.some(opt => {
-		if (opt.name === 'files') {
-			files = opt.value;
-			return true;
-		}
-	});
+.on('create', (params, all, command) => {
+	var files = params.files;
 	if (!files || files.length === 0) {
-		params.command.showError('缺少文件参数！');
+		command.showError('缺少文件参数！');
 	}
 	else {
-		files.map(f => params.command.showHint('文件 ' + f + ' 创建ing...'));
+		files.map(f => command.showHint('文件 ' + f + ' 创建ing...'));
 	}
 })
-.on('make', params => {
-	var files = null;
-	params.local.some(opt => {
-		if (opt.name === 'folders') {
-			files = opt.value;
-			return true;
-		}
-	});
+.on('make', (params, all, command) => {
+	var files = params.folders;
 	if (!files || files.length === 0) {
-		params.command.showError('缺少文件夹参数！');
+		command.showError('缺少文件夹参数！');
 	}
 	else {
-		files.map(f => params.command.showHint('文件夹 ' + f + ' 创建ing...'));
+		files.map(f => command.showHint('文件夹 ' + f + ' 创建ing...'));
 	}
 })
-.on('copy', params => {
-	var source = null, target = null;
-	params.local.some(opt => {
-		if (opt.name === 'source') {
-			source = opt.value;
-			return !!target;
+.on('copy', (params, all, command) => {
+	var source = params.source, target = params.target;
+	if (!source) command.showError('缺少源文件路径！');
+	else if (!target) command.showError('缺少目标文件路径！');
+	command.showHint('复制文件 ' + source + ' 到 ' + target + ' 中...');
+})
+
+.on('show', (params, all, command) => {
+	command.showHint(params.text);
+})
+.on('play', async (params, all, command) => {
+	all.nohint = true;
+	command.showHint('游戏开始喽~~~~');
+	await command.cli.waitEnter();
+	await command.cli.waitEnter('再来一次！！！', 'a');
+	var list = ['烂人', 'Bitch', 'Whore', 'Pussy', 'Slut', '贱人', '烂人', 'Bitch', 'Whore', 'Pussy', 'Slut', '贱人'];
+	var select = await command.cli.waitOption('请选择徐琼斐的特性：', list);
+	command.showHint('您的选择是：' + select + ' / ' + list[select]);
+	var percents = [], total = 12;
+	for (let i = 0; i < total; i ++) percents[i] = 0;
+	var update = () => {
+		var notdone = percents.some(p => p < 1);
+		for (let i = 0; i < total; i ++) {
+			percents[i] += Math.random() / 10;
+			command.cli.updateProcessbar(i, percents[i]);
 		}
-		else if (opt.name === 'target') {
-			target = opt.value;
-			return !!source;
-		}
-	});
-	params.command.showHint('复制文件 ' + source + ' 到 ' + target + ' 中...');
+		if (notdone) setTimeout(update, 1000);
+	};
+	setTimeout(update, 1000);
+	await command.cli.waitProcessbar('进度条啦啦啦', 80, total);
+	command.showHint('FUCK!!!');
+})
+
+.on('exit', (param, command) => {
+	param.msg = 'Slow Is A Bitch!!!';
 });
 
 cmdLauncher.launch();
-
-return;
-
-var command = clp({ title: 'Fuck Slow The Bitch!!!', mode: 'cli' })
-	.setParam('[...args=[what;nani]]')
-	.addOption('--nani [...files=[x;2;2017-10-13]] >> fuck files!')
-	.add('swordart|sao|swd')
-	.add('world')
-	.command('swordart')
-	.setParam('<power> [magic(3|4|5)=3] [portion(1|2|3)=2]')
-	.addOption('--soul -s <attack> >> attack enemy')
-	.addOption('--ghost -g <defence> >> defence from enemy')
-	.describeQuest('What The Fuck!!!')
-	.command('world')
-	.addOption('--other -o <nani> [what=2017-09-12] [nima=[1;x;true]] [shit={a:a;b:false;c:1}] [...fuck] >> fuck slow the bitch')
-	.addOption('--bitch >> who\'s bitch? slow is!')
-	.describeQuest('Slow The Bitch!!!')
-	.describe('Hello World!!!');
-command.on('global', params => {
-	params.global.message = 'Fuck Slow The Bitch!!!';
-	// console.log('Global Action');
-	// console.dir(params, config);
-});
-command.on('swordart', params => {
-	console.log('SwordArt Action');
-	console.dir(params, config);
-});
-command.on('world', params => {
-	console.log('World Action');
-	console.dir(params, config);
-});
-command.launch();
 
 return;
 
