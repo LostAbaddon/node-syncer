@@ -3,7 +3,7 @@
  * Desc:    系统运行状态检查
  * Author:	LostAbaddon
  * Version:	0.0.1
- * Date:	2017.10.02
+ * Date:	2017.10.15
  */
 
 var os = require('os');
@@ -23,8 +23,8 @@ const getCPUUsage = (duration, cb) => new Promise((resolve, reject) => {
 });
 
 var format = num => (Math.round(num * 10000) / 100) + '%';
-var getHealth = async () => {
-	var cpu = await getCPUUsage();
+var getHealth = async duration => {
+	var cpu = await getCPUUsage(duration);
 	var mem = process.memoryUsage();
 	var result = {
 		cpu: (cpu.user + cpu.sys) / cpu.total,
