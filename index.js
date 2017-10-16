@@ -742,8 +742,6 @@ var launchMission = async () => {
 			if (changeList[3].indexOf(p) < 0) changeList[3].push(p);
 		});
 
-		if (changeList[2].length > 150) list = [0, 0, [], []];
-
 		changePrompt(syncConfig.syncPrompt);
 		logger.log('有变更，重新分析分组......');
 		changePrompt();
