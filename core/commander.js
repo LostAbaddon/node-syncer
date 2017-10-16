@@ -42,7 +42,6 @@ const setStyle = require('./setConsoleStyle');
 const cli = require('./cli');
 
 const isDate = v => v.match(/^\d{2,4}-\d{1,2}-\d{1,2}(\/\d{1,2}:\d{1,2}(:\d{1,2}(\.\d+)?)?)?$/);
-const isString = v => typeof v === 'string' || v instanceof String;
 const toRegExp = reg => new RegExp(reg);
 
 // 参数分隔，必须使用空格的时候，用“\ ”或者“[-space-]”代替
@@ -112,17 +111,17 @@ const simpleParam2String = p => {
 		if (hour === 0 && minute === 0 && second === 0) return year + '-' + month + '-' + date;
 		return year + '-' + month + '-' + date + '/' +  hour + ':' + minute + ':' + second;
 	}
-	if (!isNaN(p) || isString(p)) return p + '';
+	if (!isNaN(p) || String.is(p)) return p + '';
 	return p;
 };
 const param2String = p => {
 	var q = simpleParam2String(p);
-	if (isString(q)) return q;
+	if (String.is(q)) return q;
 	if (p instanceof Array) {
 		q = [];
 		p.map(x => {
 			x = simpleParam2String(x);
-			if (isString(x)) q.push(x);
+			if (String.is(x)) q.push(x);
 		});
 		q = '[' + q.join(';') + ']';
 		return q;
@@ -131,7 +130,7 @@ const param2String = p => {
 	q = q.map(x => {
 		var y = p[x];
 		y = simpleParam2String(y);
-		if (isString(y)) return x + ':' + y;
+		if (String.is(y)) return x + ':' + y;
 		return null;
 	}).filter(x => !!x).join(';');
 	q = '{' + q + '}';
@@ -224,14 +223,16 @@ class Params {
 		var len, index = 0, plen = params.length;
 		// 先解析必填参数
 		len = this.musts.length;
-		if (!helpMode && plen < len) throw new Error("No Enough Params!");
+		if (!helpMode && plen < len) {
+			throw new Error("缺少参数 " + this.musts.copy().splice(plen, this.musts.length).join(' 、 ') + " !");
+		}
 		var qlen = helpMode ? plen : len;
 		for (let i = 0; i < qlen; i ++) {
 			let key = this.musts[i];
 			let value = getParamValue(params[index]);
 			let range = this.valueRanges[key];
 			if (!!range && !(value + '').match(range)) {
-				throw new Error("Wrong Param " + key + " Value!");
+				throw new Error("参数 " + key + " 的值 " + value + " 不符合取值范围 " + range + " !");
 			}
 			result[key] = value;
 			index ++;
@@ -246,7 +247,7 @@ class Params {
 			else v = this.defaultValues[n];
 			if (!!v) {
 				if (!!r && !(v + '').match(r)) {
-					throw new Error("Wrong Param " + n + " Value!");
+					throw new Error("参数 " + n + " 的值 " + v + " 不符合取值范围 " + r + " !");
 				}
 				result[n] = v;
 			}
@@ -261,7 +262,7 @@ class Params {
 				for (let i = index; i < plen; i ++) {
 					let v = getParamValue(params[i]);
 					if (!!range && !(v + '').match(range)) {
-						throw new Error("Wrong Default Param List " + this.optionlist + " Value!");
+						throw new Error("缺省参数组 " + this.optionlist + " 的值 " + v + " 不符合取值范围 " + range + " !");
 					}
 					list.push(v);
 				}
@@ -307,15 +308,15 @@ class Option {
 		var desc = (option[1] || '').trim();
 		option = ' ' + option[0] + ' ';
 		var name = option.match(/ --\w/gi);
-		if (!name) throw new Error('No Option Name!');
-		else if (name.length > 1) throw new Error('Too Many Option Names!');
+		if (!name) throw new Error('缺少开关参数！');
+		else if (name.length > 1) throw new Error('开关过多！');
 		else {
 			name = option.match(/ --(.*?) /)[1];
 			option = option.replace(' --' + name + ' ', ' ');
 		}
 		var short = option.match(/ -\w/gi);
 		if (!short) short = null;
-		else if (short.length > 1) throw new Error('Too Many Option Short Names!');
+		else if (short.length > 1) throw new Error('短开关过多！');
 		else {
 			short = option.match(/ -(.*?) /)[1];
 			option = option.replace(' -' + short + ' ', ' ');
@@ -349,7 +350,7 @@ class Quest {
 	constructor (command, alias, params, options, desc) {
 		this.command = command;
 		if (alias instanceof Array) this.alias = alias;
-		else if (isString(alias)) this.alias = [alias];
+		else if (String.is(alias)) this.alias = [alias];
 		else this.alias = null;
 		this.desc = desc || '';
 		if (params instanceof Params) this.params = params;
@@ -366,10 +367,10 @@ class Quest {
 		});
 		if (!options) options = [];
 		else if (options instanceof Option) options = [options];
-		else if (isString(options)) options = [options];
+		else if (String.is(options)) options = [options];
 		options.map(opt => {
 			if (!(opt instanceof Option)) {
-				if (isString(opt)) {
+				if (String.is(opt)) {
 					opt = Option.parse(opt);
 				}
 				else {
@@ -431,7 +432,7 @@ class Quest {
 	}
 	add (option) {
 		this.remove(option.name);
-		if (isString(option)) option = Option.parse(option);
+		if (String.is(option)) option = Option.parse(option);
 		else if (!(option instanceof Option)) {
 			option = new Option(option.name, option.short, option.params, option.desc);
 		}
@@ -483,11 +484,11 @@ class Command {
 	constructor (params, options, quests, desc) {
 		this.desc = desc || '';
 		if (quests instanceof Quest) quests = [quests];
-		else if (isString(quests)) quests = [quests];
+		else if (String.is(quests)) quests = [quests];
 		else if (!(quests instanceof Array)) quests = [];
 		quests = quests.map(q => {
 			if (q instanceof Quest) return q;
-			if (isString(q)) return Quest.parse(q);
+			if (String.is(q)) return Quest.parse(q);
 			return null;
 		}).filter(q => !!q);
 		if (!quests.some(q => q.command === '[global]')) {
@@ -528,7 +529,7 @@ class Command {
 		});
 	}
 	static parse (config) {
-		if (isString(config)) {
+		if (String.is(config)) {
 			config = config.split(' >> ');
 			var desc = (config[1] || '').trim();
 			config = ('[global] ' + config[0].trim()).split('\n').filter(q => q.trim().length > 0);
@@ -577,7 +578,7 @@ class Command {
 	}
 	add (quest) {
 		this.remove(quest.command);
-		if (isString(quest)) quest = Quest.parse(quest);
+		if (String.is(quest)) quest = Quest.parse(quest);
 		else if (!(quest instanceof Quest)) {
 			quest = new Quest(quest.command, quest.alias, quest.params, quest.options, quest.desc);
 		}

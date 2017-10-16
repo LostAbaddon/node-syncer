@@ -36,6 +36,11 @@ String.blank = (len, block) => {
 	for (let i = 0; i < len; i ++) line += block;
 	return line;
 };
+String.is = (str) => {
+	if (str instanceof String) return true;
+	if (typeof str === 'string') return true;
+	return false;
+};
 
 // Object extends
 

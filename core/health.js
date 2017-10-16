@@ -23,13 +23,14 @@ const getCPUUsage = (duration, cb) => new Promise((resolve, reject) => {
 });
 
 var format = num => (Math.round(num * 10000) / 100) + '%';
-var getHealth = async duration => {
+var getHealth = async (duration, cb) => {
 	var cpu = await getCPUUsage(duration);
 	var mem = process.memoryUsage();
 	var result = {
 		cpu: (cpu.user + cpu.sys) / cpu.total,
 		mem: (mem.rss + mem.heapTotal + mem.external) / os.totalmem()
 	};
+	if (!!cb) cb(result);
 	return result;
 };
 

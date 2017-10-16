@@ -20,6 +20,17 @@
 			"~/Library/Mobile Documents/com~apple~CloudDocs/Documents"
 		],
 		"core": [
+			"~/Documents/MyWorld/Codes/Syncer/core",
+			"~/Documents/MyWorld/Codes/Present/src/core"
+		],
+		"syncer": [
+			"~/Documents/MyWorld/Codes/Syncer",
+			"~/Library/Mobile Documents/com~apple~CloudDocs/Documents/Codes/Syncer"
+		],
+		"test": [
+			"~/Documents/MyWorld/Codes/Syncer/core/extend.js",
+			"~/Documents/MyWorld/Codes/Present/src/core/extend.js",
+			"~/Documents/MyWorld/Codes/Present/src/core/shit.js"
 		]
 	},
 	"monitor": 600,

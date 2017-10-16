@@ -308,6 +308,7 @@ class CLI {
 			this.clear();
 			this.cursor(-9999, 0);
 			this.rl.close();
+			process.stdin.destroy();
 		});
 	}
 	onRequest (callback) {
