@@ -778,6 +778,7 @@ var launchMission = async notFirstLaunch => {
 	}
 
 	if (syncConfig.deamon) {
+		if (!!deamonWatch) clearTimeout(deamonWatch);
 		deamonWatch = setTimeout(() => {
 			changePrompt(syncConfig.syncPrompt);
 			logger.log(setStyle('定时更新喽~~~', 'blue bold') + '      ' + timeNormalize());
@@ -859,13 +860,31 @@ var cmdLauncher = clp({
 		logger.error = (...args) => { args.map(arg => rtmLauncher.showError(arg)) };
 	}
 
-	if (syncConfig.deamon && !!configFile) configWatch = fs.watch(configFile, stat => {
+	if (syncConfig.deamon && !!configFile) configWatch = fs.watch(configFile, async stat => {
 		changePrompt(syncConfig.syncPrompt);
 		logger.log(setStyle('配置文件改变，重新启动巡视者~~~', 'blue bold') + '      ' + timeNormalize());
 		changePrompt();
 		clearTimeout(deamonWatch);
+		var config;
+		try {
+			config = await readJSON(configFile);
+		}
+		catch (err) {
+			config = null;
+		}
+
+		if (!!config) {
+			syncConfig.ignores = config.ignore;
+			syncConfig.ignores = getIgnoreRules(syncConfig.ignores);
+			syncConfig.group = config.group;
+			for (let group in syncConfig.group) {
+				syncConfig.group[group] = syncConfig.group[group].map(path => path.replace(/^~/, process.env.HOME));
+			}
+		}
+
 		launchMission();
 	});
+
 	launchMission();
 });
 
@@ -898,19 +917,19 @@ var rtmLauncher = clp({
 	}
 })
 .describe('多文件夹自动同步者。\n' + setStyle('当前版本：', 'bold') + 'v0.1.0')
-.add('refresh >> 强制同步更新')
-.add('start >> 开始巡视模式')
-.add('stop >> 停止巡视模式')
-.add('list >> 显示当前分组同步信息')
+.add('refresh|re >> 强制同步更新')
+.add('start|st >> 开始巡视模式')
+.add('stop|sp >> 停止巡视模式')
+.add('list|lt >> 显示当前分组同步信息')
 .addOption('--group -g <group> >> 指定group标签后可查看指定分组下的源情况')
 .addOption('--files -f <path> >> 查看指定路径下的文件列表')
 .addOption('--all -a >> 显示所有文件与文件夹，不打开则只显示有变化的文件与文件夹')
-.add('delete [...files] >> 删除文件列表')
+.add('delete|del [...files] >> 删除文件列表')
 .addOption('--group -g <group> >> 指定分组')
-.add('create [...files] >> 创建文件列表')
+.add('create|new [...files] >> 创建文件列表')
 .addOption('--group -g <group> >> 指定分组')
 .addOption('--folder -f >> 指定创建的是文件夹')
-.add('copy <source> <target> >> 从外源复制文件进来')
+.add('copy|cp <source> <target> >> 从外源复制文件进来')
 .addOption('--group -g <group> >> 指定分组')
 .add('health|ht [duration(^\\d+$|^\\d+\\.\\d*$)=1] >> 查看当前 CPU 与 MEM 使用状态，统计时长单位为秒')
 .addOption('--interval -i [interval(^\\d+$|^\\d+\\.\\d*$)=1] >> 定式更新，更新间隔单位为秒')
@@ -923,6 +942,7 @@ var rtmLauncher = clp({
 	logger.error('不存在该指令哦！输入 help 查看命令~');
 })
 .on('refresh', (params, all, command) => {
+	if (!!deamonWatch) clearTimeout(deamonWatch);
 	launchMission();
 })
 .on('list', (params, all, command) => {
