@@ -21,11 +21,20 @@
 		],
 		"core": [
 			"~/Documents/MyWorld/Codes/Syncer/core",
-			"~/Documents/MyWorld/Codes/Present/src/core"
+			"~/Documents/MyWorld/Codes/Present/src/core",
+			"~/tmp/test"
 		],
-		"syncer": [
-			"~/Documents/MyWorld/Codes/Syncer",
-			"~/Library/Mobile Documents/com~apple~CloudDocs/Documents/Codes/Syncer"
+		"codes": [
+			"~/Documents/MyWorld/Codes",
+			"~/Library/Mobile Documents/com~apple~CloudDocs/Documents/Codes"
+		],
+		"novels": [
+			"~/Documents/MyWorld/小说",
+			"~/Library/Mobile Documents/com~apple~CloudDocs/Documents/我的小说"
+		],
+		"dailylife": [
+			"~/Documents/MyWorld/生活记录.xlsx",
+			"~/Library/Mobile Documents/com~apple~CloudDocs/Documents/生活记录.xlsx"
 		],
 		"test": [
 			"~/Documents/MyWorld/Codes/Syncer/core/extend.js",

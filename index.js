@@ -78,9 +78,10 @@ SyncState.toString = (state, richtext) => {
 
 // 辅助类
 class Source {
-	constructor (node, path, date) {
+	constructor (node, path, name, date) {
 		this.nodeName = node;
 		this.fullPath = path;
+		this.filename = name;
 		this.date = date;
 	}
 }
@@ -88,16 +89,22 @@ class File {
 	constructor (name, folder) {
 		this.name = name;
 		this.source = {};
+		this.eigen = null;
 		if (folder instanceof Folder) this.parentFolder = folder;
 		else this.parentFolder = null;
 	}
 	addSource (source) {
 		if (source instanceof Source) {
 			this.source[source.nodeName] = source;
+			if (!this.eigen) this.eigen = source;
+			else if (source.date > this.eigen.date) this.eigen = source;
 		}
 		else if (source instanceof File) {
 			for (let nodeName in source.source) {
-				this.source[nodeName] = source.source[nodeName];
+				let s = source.source[nodeName];
+				this.source[nodeName] = s;
+				if (!this.eigen) this.eigen = s;
+				else if (s.date > this.eigen.date) this.eigen = s;
 			}
 		}
 		return this;
@@ -124,6 +131,42 @@ class File {
 		else {
 			return changed ? SyncState.UNSYNCED : SyncState.SYNCED;
 		}
+	}
+	sync (range, cb) {
+		return new Promise(async (res, rej) => {
+			var used = [], targets = [], changed = [], failed = [];
+			var source;
+			for (source in this.source) {
+				source = this.source[source];
+				used.push(source.fullPath);
+				if (source.date < this.eigen.date) {
+					targets.push(source.fullPath);
+				}
+			}
+			if (!syncConfig.ignore) range.map(p => {
+				p = p + this.path;
+				if (used.indexOf(p) < 0) targets.push(p);
+			});
+			var count = targets.length;
+			if (count === 0) {
+				await waitTick();
+				let result = [[], []];
+				res(result);
+				if (cb) cb(result);
+				return;
+			}
+			source = this.eigen.fullPath;
+			targets.map(async path => {
+				var err = await duplicateFile(source, path);
+				if (!!err) failed.push(path);
+				else changed.push(path);
+				count --;
+				if (count > 0) return;
+				var result = [changed, failed];
+				res(result);
+				if (cb) cb(result);
+			});
+		});
 	}
 }
 class Folder {
@@ -209,6 +252,105 @@ class Folder {
 		folderList.splice.apply(folderList, fileList);
 		return folderList;
 	}
+	sync (range, cb) {
+		return new Promise(async (res, rej) => {
+			var changed = [], failed = [], list;
+
+			if (syncConfig.ignore) {
+				range = this.source;
+			}
+			else {
+				list = await this.syncSelf(range);
+				combileList(list, changed, failed);
+			}
+
+			var task = 2;
+			this.syncFiles(range, list => {
+				combileList(list, changed, failed);
+				task --;
+				if (task > 0) return;
+				var result = [changed, failed];
+				res(result);
+				if (cb) cb(result);
+			});
+			this.syncFolders(range, list => {
+				combileList(list, changed, failed);
+				task --;
+				if (task > 0) return;
+				var result = [changed, failed];
+				res(result);
+				if (cb) cb(result);
+			});
+		});
+	}
+	syncSelf (range, cb) {
+		return new Promise(async (res, rej) => {
+			var changed = [], failed = [];
+			var list = [];
+			range.map(p => {
+				if (this.source.indexOf(p) < 0) list.push(p);
+			});
+			var result = [changed, failed], count = list.length;
+			if (count === 0) {
+				await waitTick();
+				res(result);
+				if (cb) cb(result);
+				return;
+			}
+			list.map(async p => {
+				p = p + this.path;
+				var err = await prepareFolder(p);
+				count --;
+				if (count > 0) return;
+				res(result);
+				if (cb) cb(result);
+			});
+		});
+	}
+	syncFolders (range, cb) {
+		return new Promise(async (res, rej) => {
+			var changed = [], failed = [], count = 0;
+			Object.keys(this.folders).map(async folder => {
+				count ++;
+				folder = this.folders[folder];
+				var list = await folder.sync(range);
+				combileList(list, changed, failed);
+				count --;
+				if (count > 0) return;
+				var result = [changed, failed];
+				res(result);
+				if (cb) cb(result);
+			});
+			if (count === 0) {
+				await waitTick();
+				let result = [changed, failed];
+				res(result);
+				if (cb) cb(result);
+			}
+		});
+	}
+	syncFiles (range, cb) {
+		return new Promise(async (res, rej) => {
+			var changed = [], failed = [], count = 0;
+			Object.keys(this.files).map(async file => {
+				count ++;
+				file = this.files[file];
+				var list = await file.sync(range);
+				combileList(list, changed, failed);
+				count --;
+				if (count > 0) return;
+				var result = [changed, failed];
+				res(result);
+				if (cb) cb(result);
+			});
+			if (count === 0) {
+				await waitTick();
+				let result = [changed, failed];
+				res(result);
+				if (cb) cb(result);
+			}
+		});
+	}
 }
 class Group {
 	constructor (name, folders) {
@@ -292,6 +434,22 @@ class Group {
 		}
 		return this.map.tree(range);
 	}
+	sync () {
+		return new Promise(async (res, rej) => {
+			var range = this.range;
+			var changeList;
+			if (this.mode === WatchMode.FILE) {
+				let fn = this.map.files.single_file.path.length;
+				range = range.map(p => p.substring(0, p.length - fn));
+				changeList = await this.map.files.single_file.sync(range);
+			}
+			else if (this.mode === WatchMode.FOLDER) {
+				changeList = await this.map.sync(range);
+				await waitTick();
+			}
+			res(changeList);
+		});
+	}
 }
 
 // 扫描相关
@@ -305,7 +463,7 @@ var scanFile = (file, node, path, filename, cb) => {
 			cb(false);
 			return;
 		}
-		var source = new Source(node, path, stat.mtimeMs);
+		var source = new Source(node, path, filename, stat.mtimeMs);
 		file.addSource(source);
 		cb(true);
 	});
@@ -342,7 +500,7 @@ var scanFolder = (folder, node, path, cb) => {
 					let file = new File(subpath);
 					folder.addFile(file);
 					file = folder.files[subpath];
-					let source = new Source(node, fullpath, stat.mtimeMs);
+					let source = new Source(node, fullpath, file.name, stat.mtimeMs);
 					file.addSource(source);
 					taskDone(fullpath);
 				}
@@ -368,10 +526,12 @@ var scanGroup = (group, cb) => {
 		for (let f in group.folders) {
 			if (group.folders[f] !== FolderState.EXIST) continue;
 			fileCount ++;
-			scanFile(file, f, f, Path.basename(f), ok => {
+			let fn = Path.basename(f);
+			scanFile(file, f, f, fn, ok => {
 				fileTask ++;
 				if (fileTask < fileCount) return;
 				if (Object.keys(file.source).length > 0) group.map.addFile(file);
+				file.name = file.eigen.filename;
 				cb();
 			});
 		}
@@ -392,18 +552,57 @@ var scanGroup = (group, cb) => {
 	}
 };
 
+// 同步相关
+var getFileNameInShell = filename => filename
+	.replace(/ /g, '\\ ')
+	.replace(/'/g, "\\'")
+	.replace(/\(/g, "\\(")
+	.replace(/\)/g, "\\)")
+	.replace(/\&/g, "\\&");
+var prepareFolder = (target, cb) => new Promise(async (res, rej) => {
+	var err = await fs.mkfolder(target);
+	changePrompt(syncConfig.syncPrompt);
+	if (!!err) logger.log(setStyle(setStyle('新建目录失败：', 'bold') + target, 'red'));
+	else logger.log(setStyle('新建目录：', 'yellow bold') + target);
+	changePrompt();
+	res(err);
+	if (cb) cb(err);
+});
+var duplicateFile = (source, target, cb) => new Promise(async (res, rej) => {
+	source = getFileNameInShell(source);
+	target = getFileNameInShell(target);
+	var cmd = 'cp -a ' + source + ' ' + target;
+	exec(cmd, (err, stdout, stderr) => {
+		changePrompt(syncConfig.syncPrompt);
+		if (!!err) logger.log(setStyle(setStyle('同步文件失败：', 'bold') + target, 'red'));
+		else logger.log(setStyle('同步文件：', 'bold') + target);
+		changePrompt();
+		res(err);
+		if (cb) cb(err);
+	});
+});
+var combileList = (list, changed, failed) => {
+	list[0].map(p => {
+		if (changed.indexOf(p) < 0) changed.push(p);
+	});
+	list[1].map(p => {
+		if (failed.indexOf(p) < 0) failed.push(p);
+	});
+};
+
 // 配置
 var syncConfig = {
 	file: configPath,
 	ignore: false,
 	deamon: false,
+	silence: false,
 	duration: null,
 	web: false,
 	ignores: [],
 	group: {},
 	syncPrompt: setStyle('同步者：', 'green bold'),
-	mapPaddingLeft: 64,
-	mapPaddingLevel: 16
+	mapPaddingLeft: 80,
+	mapPaddingLevel: 20
 };
 var syncGroups = {};
 
@@ -425,18 +624,19 @@ var readJSON = file => new Promise((res, rej) => {
 		res(content);
 	});
 });
-const RegASCII = /[\x00-\xff]+/g;
+const RegMonoWidthChars = /[\x00-\xff–]+/g;
 var getCLLength = text => {
 	var len = text.length;
-	var ascii = text.match(RegASCII);
+	var ascii = text.match(RegMonoWidthChars);
 	if (!ascii) ascii = '';
 	return len * 2 - ascii.join('').length;
 };
+var waitTick = async () => new Promise((res, rej) => setImmediate(res));
 
 // CLI相关
 var originHints = null;
 var changePrompt = prompt => {
-	if (!syncConfig.deamon) return;
+	if (!syncConfig.deamon || syncConfig.silence) return;
 	if (!originHints) originHints = rtmLauncher.cli.hints.copy();
 	if (!!prompt) {
 		rtmLauncher.cli.hints.hint = prompt;
@@ -493,22 +693,77 @@ var initialGroups = list => new Promise((resolve, reject) => {
 		groups[group] = g;
 	}
 });
+var launchSync = groups => new Promise((res, rej) => {
+	var changeGroup = {}, failGroup = {}, changeList = [], failList = [], changeCount = 0;
+	Object.keys(groups).map(async group => {
+		changeCount ++;
+		group = groups[group];
+		var list = await group.sync();
+		changeGroup[group.name] = list[0];
+		failGroup[group.name] = list[1];
+		combileList(list, changeList, failList);
+		changeCount --;
+		if (changeCount > 0) return;
+		res([changeGroup, failGroup, changeList, failList]);
+	});
+});
 var launchMission = async () => {
 	changePrompt(syncConfig.syncPrompt);
 	logger.log('开始分析目录组......');
 	changePrompt();
 	syncGroups = await initialGroups(syncConfig.group);
+
 	changePrompt(syncConfig.syncPrompt);
-	logger.log('开始啦啦啦~~~');
+	logger.log('目录分析完成，开始同步......');
 	changePrompt();
+	var changeList = [{}, {}, [], []], list = [0, 0, [0], [0]];
 	for (let group in syncGroups) {
-		group = syncGroups[group];
-		// console.dir(group.name, { depth:1, colors:true });
-		// let tree = group.tree;
-		// console.dir(tree.map(t => t[0]), { depth:1, colors:true });
-		// console.dir(tree.filter(t => t[1] !== SyncState.SYNCED).map(t => t[0]), { depth:1, colors:true });
+		changeList[0][group] = [];
+		changeList[1][group] = [];
 	}
-	// console.log(syncConfig.ignores);
+	while (list[2].length + list[3].length > 0) {
+		list = await launchSync(syncGroups);
+		if (list[2].length + list[3].length === 0) {
+			break;
+		}
+
+		for (let group in syncGroups) {
+			list[0][group].map(p => {
+				if (changeList[0][group].indexOf(p) < 0) changeList[0][group].push(p);
+			});
+			list[1][group].map(p => {
+				if (changeList[1][group].indexOf(p) < 0) changeList[1][group].push(p);
+			});
+		}
+		list[2].map(p => {
+			if (changeList[2].indexOf(p) < 0) changeList[2].push(p);
+		});
+		list[3].map(p => {
+			if (changeList[3].indexOf(p) < 0) changeList[3].push(p);
+		});
+
+		if (changeList[2].length > 150) list = [0, 0, [], []];
+
+		changePrompt(syncConfig.syncPrompt);
+		logger.log('有变更，重新分析分组......');
+		changePrompt();
+		syncGroups = await initialGroups(syncConfig.group);
+	}
+
+	changePrompt(syncConfig.syncPrompt);
+	logger.log('同步完成......');
+	logger.log(setStyle(setStyle('同步成功 ', 'bold') + changeList[2].length + ' 个文件', 'green'));
+	logger.log(setStyle(setStyle('同步失败 ', 'bold') + changeList[3].length + ' 个文件', 'magenta'));
+	for (let group in syncGroups) {
+		let changed = changeList[0][group].length;
+		let failed = changeList[1][group].length;
+		if (changed + failed === 0) continue;
+		let message = setStyle(setStyle('同步 ' + group + '： ', 'bold') + (changed + failed) + ' 个文件/目录', 'underline')
+		if (changed > 0) message += '\n        ' + setStyle(setStyle('同步成功： ', 'bold') + changed + ' 个文件/目录', 'green');
+		if (failed > 0) message += '\n        ' + setStyle(setStyle('同步失败： ', 'bold') + failed + ' 个文件/目录', 'magenta');
+		logger.log(message);
+	}
+	changePrompt();
 };
 
 
@@ -748,12 +1003,6 @@ var checkFolder = paths => new Promise((resolve, reject) => {
 		}
 	});
 });
-var getFileNameInShell = filename => filename
-	.replace(/ /g, '\\ ')
-	.replace(/'/g, "\\'")
-	.replace(/\(/g, "\\(")
-	.replace(/\)/g, "\\)")
-	.replace(/\&/g, "\\&");
 var copyFile = (origin, target) => new Promise((resolve, reject) => {
 	origin = getFileNameInShell(origin);
 	target = getFileNameInShell(target);
@@ -868,7 +1117,7 @@ var cmdLauncher = clp({
 	if (!!params.ignore) syncConfig.ignore = params.ignore;
 	if (!!params.deamon) syncConfig.deamon = params.deamon;
 	if (!isNaN(params.duration)) syncConfig.duration = params.duration * 60;
-	if (!!params.silence) syncConfig.deamon = false;
+	if (!!params.silence) syncConfig.silence = true;
 	if (!!params.web) {
 		syncConfig.web = params.web;
 		logger.error('Web服务模式暂未开启，敬请期待~~');
@@ -898,7 +1147,7 @@ var cmdLauncher = clp({
 		syncConfig.group[group] = syncConfig.group[group].map(path => path.replace(/^~/, process.env.HOME));
 	}
 
-	if (syncConfig.deamon) {
+	if (syncConfig.deamon && !syncConfig.silence) {
 		rtmLauncher.launch();
 
 		logger.info = (...args) => { args.map(arg => rtmLauncher.showHint(arg)) };
@@ -956,7 +1205,7 @@ var rtmLauncher = clp({
 .on('command', (params, command) => {
 	if (Object.keys(params).length > 1) return;
 	if (params.mission.length > 0) return;
-	command.showError('不存在该指令哦！输入 help 查看命令~');
+	logger.error('不存在该指令哦！输入 help 查看命令~');
 })
 .on('refresh', (params, all, command) => {
 	launchMission();
@@ -983,7 +1232,7 @@ var rtmLauncher = clp({
 		}
 	}
 	if (groupCount[3] > 0) {
-		command.showError('设置读取暂未完成，请稍等。。。');
+		logger.error('设置读取暂未完成，请稍等。。。');
 		return;
 	}
 
@@ -992,65 +1241,68 @@ var rtmLauncher = clp({
 	var showAll = !!params.all;
 	if (!group) {
 		let wrongCount = groupCount[0] - groupCount[1] - groupCount[2];
-		command.showHint(setStyle(`共有 ${groupCount[0]} 个分组，其中 ${groupCount[2]} 个目录分组、 ${groupCount[1]} 个文件分组和 ${wrongCount} 个错误分组。`, 'bold'));
+		let message = [ '' ];
+		message.push(setStyle(`共有 ${groupCount[0]} 个分组，其中 ${groupCount[2]} 个目录分组、 ${groupCount[1]} 个文件分组和 ${wrongCount} 个错误分组。`, 'bold'));
 		if (groupCount[2] > 0) {
-			command.showHint(setStyle(`目录分组（${groupCount[2]} 个）：`, 'green bold'));
+			message.push(setStyle(`目录分组（${groupCount[2]} 个）：`, 'green bold'));
 			groupList.folder.map(g => {
-				command.showHint('    ' + setStyle('分组：' + g.name, 'bold'));
+				message.push('    ' + setStyle('分组：' + g.name, 'bold'));
 				for (let folder in g.folders) {
 					let state = g.folders[folder];
 					if (g.folders[folder] === FolderState.NOTEXIST) {
-						command.showHint('        - ' + setStyle('路径：' + folder + '（不存在）', 'red bold'));
+						message.push('        - ' + setStyle('路径：' + folder + '（不存在）', 'red bold'));
 					}
 					else {
-						command.showHint('        - ' + setStyle('路径：', 'bold') + folder);
+						message.push('        - ' + setStyle('路径：', 'bold') + folder);
 					}
 				}
 			});
 		}
 		if (groupCount[1] > 0) {
-			command.showHint(setStyle(`文件分组（${groupCount[1]} 个）：`, 'yellow bold'));
+			message.push(setStyle(`文件分组（${groupCount[1]} 个）：`, 'yellow bold'));
 			groupList.file.map(g => {
-				command.showHint('    ' + setStyle('分组：' + g.name, 'bold'));
+				message.push('    ' + setStyle('分组：' + g.name, 'bold'));
 				for (let folder in g.folders) {
 					let state = g.folders[folder];
 					if (g.folders[folder] === FolderState.NOTEXIST) {
-						command.showHint('        - ' + setStyle('路径：' + folder + '（不存在）', 'red bold'));
+						message.push('        - ' + setStyle('路径：' + folder + '（不存在）', 'red bold'));
 					}
 					else {
-						command.showHint('        - ' + setStyle('路径：', 'bold') + folder);
+						message.push('        - ' + setStyle('路径：', 'bold') + folder);
 					}
 				}
 			});
 		}
 		if (wrongCount > 0) {
-			command.showHint(setStyle(`错误分组（${wrongCount} 个）：`, 'red bold'));
+			message.push(setStyle(`错误分组（${wrongCount} 个）：`, 'red bold'));
 			groupList.wrong.map(g => {
-				command.showHint('    ' + setStyle('分组：' + g.name, 'bold'));
+				message.push('    ' + setStyle('分组：' + g.name, 'bold'));
 				for (let folder in g.folders) {
 					let state = g.folders[folder];
 					if (g.folders[folder] === FolderState.NOTEXIST) {
-						command.showHint('        - ' + setStyle('路径：' + folder + '（不存在）', 'red bold'));
+						message.push('        - ' + setStyle('路径：' + folder + '（不存在）', 'red bold'));
 					}
 					else {
-						command.showHint('        - ' + setStyle('路径：', 'bold') + folder);
+						message.push('        - ' + setStyle('路径：', 'bold') + folder);
 					}
 				}
 			});
 		}
+		logger.log(message.join('\n'));
 	}
 	else {
 		let g = syncGroups[group];
 		if (!g) {
-			command.showError('指定分组 ' + group + ' 不存在！');
+			logger.error('指定分组 ' + group + ' 不存在！');
 			return;
 		}
 		let state = '';
+		let message = [ '' ];
 		if (g.mode === WatchMode.FILE) state = '监控文件';
 		else if (g.mode === WatchMode.FOLDER) state = '监控目录';
 		else state = '异常';
-		command.showHint(setStyle('分组：', 'bold') + group);
-		command.showHint(setStyle('状态：', 'bold') + state);
+		message.push(setStyle('分组：', 'bold') + group);
+		message.push(setStyle('状态：', 'bold') + state);
 		if (g.mode !== WatchMode.WRONG) {
 			let folders = g.folders;
 			let counts = [0, 0, [], []];
@@ -1064,17 +1316,17 @@ var rtmLauncher = clp({
 					counts[3].push(g);
 				}
 			}
-			command.showHint(setStyle('监控路径数：', 'bold') + (counts[0] + counts[1]));
+			message.push(setStyle('监控路径数：', 'bold') + (counts[0] + counts[1]));
 			if (counts[0] > 0) {
-				command.showHint('    ' + setStyle('可监控路径：', 'bold') + counts[0]);
-				counts[2].map(p => command.showHint('        ' + p));
+				message.push('    ' + setStyle('可监控路径：', 'bold') + counts[0]);
+				counts[2].map(p => message.push('        ' + p));
 			}
 			if (counts[1] > 0) {
-				command.showHint('    ' + setStyle('异常控路径：', 'red bold') + counts[1]);
-				counts[3].map(p => command.showHint('        ' + setStyle(p, 'red')));
+				message.push('    ' + setStyle('异常路径：', 'red bold') + counts[1]);
+				counts[3].map(p => message.push('        ' + setStyle(p, 'red')));
 			}
 		}
-		command.showHint(setStyle('文件同步状态：', 'bold'));
+		message.push(setStyle('文件同步状态：', 'bold'));
 		let grp = syncGroups[group];
 		let tree = grp.tree;
 		if (!showAll) {
@@ -1084,49 +1336,41 @@ var rtmLauncher = clp({
 			tree = tree.filter(t => t[0].indexOf(path) >= 0)
 		}
 		if (tree.length === 0) {
-			if (showAll) command.showHint('    ' + setStyle('无文件', 'blue bold'));
-			else command.showHint('    ' + setStyle('都已同步', 'green bold'));
+			if (showAll) message.push('    ' + setStyle('无文件', 'blue bold'));
+			else message.push('    ' + setStyle('都已同步', 'green bold'));
 		}
 		tree.map(t => {
 			var len = getCLLength(t[0]), vlen = len + 2;
 			vlen = Math.ceil(vlen / syncConfig.mapPaddingLevel) * syncConfig.mapPaddingLevel;
 			if (vlen < syncConfig.mapPaddingLeft) vlen = syncConfig.mapPaddingLeft;
-			command.showHint('    ' + t[0] + String.blank(vlen - len) + ' | ' + SyncState.toString(t[1], true));
+			message.push('    ' + t[0] + String.blank(vlen - len) + ' | ' + SyncState.toString(t[1], true));
 		});
+		logger.log(message.join('\n'));
 	}
 })
 .on('delete', (params, all, command) => {
 	var files = params.files;
 	if (!files || files.length === 0) {
-		command.showError('缺少文件参数！');
+		logger.error('缺少文件参数！');
 	}
 	else {
-		files.map(f => command.showHint('文件 ' + f + ' 删除ing...'));
+		files.map(f => logger.log('文件 ' + f + ' 删除ing...'));
 	}
 })
 .on('create', (params, all, command) => {
 	var files = params.files;
 	if (!files || files.length === 0) {
-		command.showError('缺少文件参数！');
+		logger.error('缺少文件参数！');
 	}
 	else {
-		files.map(f => command.showHint('文件 ' + f + ' 创建ing...'));
-	}
-})
-.on('make', (params, all, command) => {
-	var files = params.folders;
-	if (!files || files.length === 0) {
-		command.showError('缺少文件夹参数！');
-	}
-	else {
-		files.map(f => command.showHint('文件夹 ' + f + ' 创建ing...'));
+		files.map(f => logger.log('文件 ' + f + ' 创建ing...'));
 	}
 })
 .on('copy', (params, all, command) => {
 	var source = params.source, target = params.target;
-	if (!source) command.showError('缺少源文件路径！');
-	else if (!target) command.showError('缺少目标文件路径！');
-	command.showHint('复制文件 ' + source + ' 到 ' + target + ' 中...');
+	if (!source) logger.error('缺少源文件路径！');
+	else if (!target) logger.error('缺少目标文件路径！');
+	logger.log('复制文件 ' + source + ' 到 ' + target + ' 中...');
 })
 .on('health', (param, all, command) => {
 	getHealth(param.duration * 1000, result => {
@@ -1146,7 +1390,7 @@ var rtmLauncher = clp({
 .on('exit', (param, command) => {
 	if (!!healthWatcher) {
 		changePrompt(syncConfig.syncPrompt);
-		command.showHint('结束健康监控。。。');
+		logger.log('结束健康监控。。。');
 		changePrompt();
 		clearInterval(healthWatcher);
 	}
