@@ -22,6 +22,7 @@ require('./core/fsutils');
 
 const getHealth = require('./core/health');
 const setStyle = require('./core/setConsoleStyle');
+const timeNormalize = global.Utils.getTimeString;
 const loglev = (process.env.NODE_ENV === 'production' || process.env.NODE_ENV === 'prod') ? 3 : 1;
 const logger = global.logger(loglev);
 const configPath = process.cwd() + '/config.json';
@@ -680,6 +681,7 @@ var checkIgnoreRule = fileName => {
 };
 
 var deamonWatch = null;
+var configWatch = null;
 var initialGroups = list => new Promise((resolve, reject) => {
 	var groups = {};
 	var groupCount = Object.keys(list).length;
@@ -708,15 +710,23 @@ var launchSync = groups => new Promise((res, rej) => {
 		res([changeGroup, failGroup, changeList, failList]);
 	});
 });
-var launchMission = async () => {
-	changePrompt(syncConfig.syncPrompt);
-	logger.log('开始分析目录组......');
-	changePrompt();
+var launchMission = async notFirstLaunch => {
+	var log, message = [''];
+	if (!!notFirstLaunch) {
+		log = text => message.push(text);
+	}
+	else {
+		log = text => {
+			changePrompt(syncConfig.syncPrompt);
+			logger.log(text);
+			changePrompt();
+		};
+	}
+
+	log('开始分析目录组......');
 	syncGroups = await initialGroups(syncConfig.group);
 
-	changePrompt(syncConfig.syncPrompt);
-	logger.log('目录分析完成，开始同步......');
-	changePrompt();
+	log('目录分析完成，开始同步......');
 	var changeList = [{}, {}, [], []], list = [0, 0, [0], [0]];
 	for (let group in syncGroups) {
 		changeList[0][group] = [];
@@ -724,9 +734,7 @@ var launchMission = async () => {
 	}
 	while (list[2].length + list[3].length > 0) {
 		list = await launchSync(syncGroups);
-		if (list[2].length + list[3].length === 0) {
-			break;
-		}
+		if (list[2].length + list[3].length === 0) break;
 
 		for (let group in syncGroups) {
 			list[0][group].map(p => {
@@ -743,33 +751,38 @@ var launchMission = async () => {
 			if (changeList[3].indexOf(p) < 0) changeList[3].push(p);
 		});
 
-		changePrompt(syncConfig.syncPrompt);
-		logger.log('有变更，重新分析分组......');
-		changePrompt();
+		log('有变更，重新分析分组......');
 		syncGroups = await initialGroups(syncConfig.group);
 	}
 
-	changePrompt(syncConfig.syncPrompt);
-	logger.log('同步完成......');
-	logger.log(setStyle(setStyle('同步成功 ', 'bold') + changeList[2].length + ' 个文件', 'green'));
-	logger.log(setStyle(setStyle('同步失败 ', 'bold') + changeList[3].length + ' 个文件', 'magenta'));
+	log('同步完成......');
+	log(setStyle(setStyle('同步成功 ', 'bold') + changeList[2].length + ' 个文件', 'green'));
+	log(setStyle(setStyle('同步失败 ', 'bold') + changeList[3].length + ' 个文件', 'magenta'));
+	var hasChange = 0;
 	for (let group in syncGroups) {
 		let changed = changeList[0][group].length;
 		let failed = changeList[1][group].length;
 		if (changed + failed === 0) continue;
+		hasChange += changed + failed;
 		let message = setStyle(setStyle('同步 ' + group + '： ', 'bold') + (changed + failed) + ' 个文件/目录', 'underline')
 		if (changed > 0) message += '\n        ' + setStyle(setStyle('同步成功： ', 'bold') + changed + ' 个文件/目录', 'green');
 		if (failed > 0) message += '\n        ' + setStyle(setStyle('同步失败： ', 'bold') + failed + ' 个文件/目录', 'magenta');
-		logger.log(message);
+		log(message);
 	}
-	changePrompt();
+	hasChange = hasChange > 0;
+
+	if (!!notFirstLaunch && hasChange) {
+		changePrompt(syncConfig.syncPrompt);
+		logger.log(message.join('\n        '));
+		changePrompt();
+	}
 
 	if (syncConfig.deamon) {
 		deamonWatch = setTimeout(() => {
 			changePrompt(syncConfig.syncPrompt);
-			logger.log(setStyle('定时更新喽~~~', 'blue bold'));
+			logger.log(setStyle('定时更新喽~~~', 'blue bold') + '      ' + timeNormalize());
 			changePrompt();
-			launchMission();
+			launchMission(true);
 		}, syncConfig.duration * 1000);
 	}
 };
@@ -813,15 +826,17 @@ var cmdLauncher = clp({
 })
 .on('done', async params => {
 	if (params.help) return;
-	var config;
+	var config, configFile = syncConfig.file;
 	try {
 		config = await readJSON(syncConfig.file);
 	}
 	catch (err) {
+		configFile = configPath;
 		try {
 			config = await readJSON(configPath);
 		}
 		catch (e) {
+			configFile = null;
 			config = {};
 		}
 	}
@@ -842,10 +857,15 @@ var cmdLauncher = clp({
 		logger.log = (...args) => { args.map(arg => rtmLauncher.showHint(arg)) };
 		logger.warn = (...args) => { args.map(arg => rtmLauncher.showError(arg)) };
 		logger.error = (...args) => { args.map(arg => rtmLauncher.showError(arg)) };
-
-		// rtmLauncher.parse('--help');
 	}
 
+	if (syncConfig.deamon && !!configFile) configWatch = fs.watch(configFile, stat => {
+		changePrompt(syncConfig.syncPrompt);
+		logger.log(setStyle('配置文件改变，重新启动巡视者~~~', 'blue bold') + '      ' + timeNormalize());
+		changePrompt();
+		clearTimeout(deamonWatch);
+		launchMission();
+	});
 	launchMission();
 });
 
@@ -879,17 +899,24 @@ var rtmLauncher = clp({
 })
 .describe('多文件夹自动同步者。\n' + setStyle('当前版本：', 'bold') + 'v0.1.0')
 .add('refresh >> 强制同步更新')
+.add('start >> 开始巡视模式')
+.add('stop >> 停止巡视模式')
 .add('list >> 显示当前分组同步信息')
 .addOption('--group -g <group> >> 指定group标签后可查看指定分组下的源情况')
 .addOption('--files -f <path> >> 查看指定路径下的文件列表')
 .addOption('--all -a >> 显示所有文件与文件夹，不打开则只显示有变化的文件与文件夹')
 .add('delete [...files] >> 删除文件列表')
+.addOption('--group -g <group> >> 指定分组')
 .add('create [...files] >> 创建文件列表')
+.addOption('--group -g <group> >> 指定分组')
 .addOption('--folder -f >> 指定创建的是文件夹')
 .add('copy <source> <target> >> 从外源复制文件进来')
-.add('health|hth [duration(^\\d+$|^\\d+\\.\\d*$)=1] >> 查看当前 CPU 与 MEM 使用状态，统计时长单位为秒')
+.addOption('--group -g <group> >> 指定分组')
+.add('health|ht [duration(^\\d+$|^\\d+\\.\\d*$)=1] >> 查看当前 CPU 与 MEM 使用状态，统计时长单位为秒')
 .addOption('--interval -i [interval(^\\d+$|^\\d+\\.\\d*$)=1] >> 定式更新，更新间隔单位为秒')
 .addOption('--stop -s >> 定制定式更新')
+.add('history|his >> 查看更新文件历史')
+.addOption('--all -a >> 查看启动以来的更新文件历史')
 .on('command', (params, command) => {
 	if (Object.keys(params).length > 1) return;
 	if (params.mission.length > 0) return;
@@ -1077,16 +1104,18 @@ var rtmLauncher = clp({
 })
 .on('exit', (param, command) => {
 	if (!!healthWatcher) {
+		clearInterval(healthWatcher);
 		changePrompt(syncConfig.syncPrompt);
 		logger.log('结束监控者。。。');
 		changePrompt();
-		clearInterval(healthWatcher);
 	}
 	if (!!deamonWatch) {
+		clearTimeout(deamonWatch);
+		if (configWatch) configWatch.close();
+		configWatch = null;
 		changePrompt(syncConfig.syncPrompt);
 		logger.log('结束巡视者。。。');
 		changePrompt();
-		clearTimeout(deamonWatch);
 	}
 	param.msg = '同步者已死……';
 });
