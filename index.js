@@ -32,11 +32,11 @@ const deamonDuration = 60;
 // 系统级错误处理
 process.on('unhandledRejection', (reason, p) => {
 	logger.error('Unhandled Rejection:', reason);
-	logger.error(p);
+	console.error(p);
 });
 process.on('uncaughtException', err => {
 	logger.error('Uncaught Exception:');
-	logger.error(err);
+	console.error(err);
 });
 
 // 配置
@@ -56,6 +56,7 @@ var syncConfig = {
 	mapPaddingLevel: 20
 };
 var syncGroups = {};
+var handcraftCreating = false;
 
 // 符号相关
 var setSymbols = (host, symbols) => {
@@ -638,6 +639,73 @@ var readJSON = file => new Promise((res, rej) => {
 		res(content);
 	});
 });
+var createFolders = folders => new Promise((res, rej) => {
+	var count = folders.length, failed = [];
+	if (count === 0) {
+		setImmediate(() => {
+			res(failed);
+		});
+		return;
+	}
+	folders.map(async folder => {
+		logger.info(setStyle('创建目录：', 'bold') + folder);
+		var err = await fs.mkfolder(folder);
+		if (!!err) {
+			logger.error(setStyle('创建目录错误：', 'red bold') + folder);
+			logger.error(err);
+			failed.push(folder);
+		}
+		count --;
+		if (count > 0) return;
+		res(failed);
+	});
+});
+var createEmptyFiles = files => new Promise((res, rej) => {
+	var count = files.length, failed = [];
+	if (count === 0) {
+		setImmediate(() => {
+			res(failed);
+		});
+		return;
+	}
+	files.map(file => {
+		logger.info(setStyle('创建文件：', 'bold') + file);
+		fs.appendFile(file, '', 'utf8', err => {
+			if (!!err) {
+				logger.error(setStyle('创建文件错误：', 'red bold') + file);
+				logger.error(err);
+				failed.push(file);
+			}
+			count --;
+			if (count > 0) return;
+			res(failed);
+		});
+	});
+});
+var filterPath = (paths, cb) => new Promise((res, rej) => {
+	var count = paths.length, nonexist = [], files = [], folders = [], wrong = [];
+	paths.map(path => {
+		fs.stat(path, (err, stat) => {
+			if (!!err || !stat) {
+				nonexist.push(path);
+			}
+			else if (stat.isFile()) {
+				files.push(path);
+			}
+			else if (stat.isDirectory()) {
+				folders.push(path);
+			}
+			else {
+				wrong.push(path);
+			}
+			count --;
+			if (count > 0) return;
+			var result = { nonexist, files, folders, wrong };
+			res(result);
+			if (cb) cb(result);
+		});
+	});
+});
 const RegMonoWidthChars = /[\x00-\xff–]+/g;
 var getCLLength = text => {
 	var len = text.length;
@@ -706,6 +774,7 @@ var fileWatchers = {};
 var watcherTrigger = null;
 var treeWatcher = (path, isFile) => (stat, file) => {
 	if (syncConfig.deaf) return;
+	if (handcraftCreating) return;
 	if (checkIgnoreRule(file)) return;
 	if (!!watcherTrigger) clearTimeout(watcherTrigger);
 	watcherTrigger = setTimeout(() => {
@@ -941,9 +1010,9 @@ var cmdLauncher = clp({
 .describe('多文件夹自动同步者。\n' + setStyle('当前版本：', 'bold') + 'v0.1.0')
 .addOption('--config -c <config> >> 配置文档地址')
 .addOption('--showdiff -sd >> 只查看变更结果')
-.addOption('--deaf -df >> 失聪模式')
 .addOption('--ignore -i >> 是否忽略删除')
 .addOption('--deamon -d [duration(^\\d+$|^\\d+\\.\\d*$)=10] >> 是否启用监控模式，可配置自动监控时间间隔，默认时间为十分钟')
+.addOption('--deaf -df >> 失聪模式')
 .addOption('--silence -s >> 不启用命令行控制面板')
 .addOption('--web -w >> 启用Web后台模式' + setStyle('【待开发】', ['green', 'bold']))
 .on('command', params => {
@@ -1335,23 +1404,121 @@ var rtmLauncher = clp({
 	});
 	logger.log(message.join('\n'));
 })
-.on('create', (params, all, command) => {
-	var files = params.files;
-	if (!files || files.length === 0) {
-		logger.error('缺少文件参数！');
+.on('create', async (params, all, command) => {
+	var group = params.group;
+	if (!group) {
+		command.showError('所属分组参数不能为空！');
+		return;
 	}
-	else {
-		files.map(f => logger.log('文件 ' + f + ' 创建ing...'));
+	group = syncGroups[group];
+	if (!group) {
+		command.showError('所选分组不存在！');
+		return;
 	}
+	if (group.mode === WatchMode.NOTREADY) {
+		command.showError('所选分组检测中，请稍后再试！');
+		return;
+	}
+	if (group.mode === WatchMode.WRONG) {
+		command.showError('所选分组异常！');
+		return;
+	}
+	if (group.mode === WatchMode.FILE) {
+		command.showError('不可在文件同步组里创建文件/目录！');
+		return;
+	}
+	var paths = params.files;
+	if (!paths || paths.length === 0) {
+		command.showError('不可没有目标路径！');
+		return;
+	}
+	var isFolder = !!params.folder, range = group.range;
+	handcraftCreating = true;
+
+	var files = [], folders = [];
+	paths.map(f => {
+		f = '/' + f.replace(/^\//, '').trim();
+		range.map(p => {
+			var r = Path.normalize(p + f);
+			if (isFolder) {
+				if (folders.indexOf(r) < 0) folders.push(r);
+			}
+			else {
+				let q = Path.dirname(r);
+				if (folders.indexOf(q) < 0) folders.push(q);
+				if (files.indexOf(r) < 0) files.push(r);
+			}
+		});
+	});
+
+	var stats;
+	logger.info(setStyle('开始创建文件', 'green bold'));
+	stats = await filterPath(folders);
+	stats.failed = await createFolders(stats.nonexist);
+	logger.info(setStyle('目录已创建', 'green bold'));
+	stats.changed = stats.nonexist.filter(path => (stats.failed.indexOf(path) < 0));
+	omniHistory.record(stats.changed, stats.failed);
+	folders = [];
+	stats.folders.forEach(path => folders.push(path));
+	stats.changed.forEach(path => folders.push(path));
+	stats.unavailableFiles = [];
+	files = files.filter(path => {
+		var available = folders.some(p => path.indexOf(p) === 0);
+		if (!available) stats.unavailableFiles.push(path);
+		return available;
+	});
+	stats.fileStats = await filterPath(files);
+	stats.fileStats.failed = await createEmptyFiles(stats.fileStats.nonexist);
+	stats.fileStats.changed = stats.fileStats.nonexist.filter(path => (stats.fileStats.failed.indexOf(path) < 0));
+	stats.unavailableFiles.forEach(path => stats.fileStats.failed.push(path));
+	omniHistory.record(stats.fileStats.changed, stats.fileStats.failed);
+	logger.info(setStyle('文件创建完成', 'green bold'));
+	logger.info('    ' + setStyle('共创建' + stats.changed.length + '个目录', 'blue bold'));
+	logger.info('    ' + setStyle('共创建' + stats.fileStats.changed.length + '个文件', 'blue bold'));
+	logger.info('    ' + setStyle('共创建失败' + stats.failed.length + '个目录', 'red bold'));
+	logger.info('    ' + setStyle('共创建失败' + stats.fileStats.failed.length + '个文件', 'red bold'));
+
+	handcraftCreating = false;
+
+	razeAllWatchers();
+	if (!!deamonWatch) clearTimeout(deamonWatch);
+	launchMission();
 })
 .on('delete', (params, all, command) => {
+	var group = params.group;
+	if (!group) {
+		command.showError('所属分组参数不能为空！');
+		return;
+	}
+	group = syncGroups[group];
+	if (!group) {
+		command.showError('所选分组不存在！');
+		return;
+	}
+	if (group.mode === WatchMode.NOTREADY) {
+		command.showError('所选分组检测中，请稍后再试！');
+		return;
+	}
+	if (group.mode === WatchMode.WRONG) {
+		command.showError('所选分组异常！');
+		return;
+	}
+	if (group.mode === WatchMode.FILE) {
+		command.showError('不可在文件同步组里删除文件/目录！');
+		return;
+	}
 	var files = params.files;
 	if (!files || files.length === 0) {
-		logger.error('缺少文件参数！');
+		command.showError('不可没有目标路径！');
+		return;
 	}
-	else {
-		files.map(f => logger.log('文件 ' + f + ' 删除ing...'));
-	}
+	handcraftCreating = true;
+
+	handcraftCreating = false;
+
+	razeAllWatchers();
+	if (!!deamonWatch) clearTimeout(deamonWatch);
+	launchMission();
 })
 .on('copy', (params, all, command) => {
 	var source = params.source, target = params.target;
