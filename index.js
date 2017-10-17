@@ -20,6 +20,7 @@ require('./core/datetime');
 require('./core/logger');
 require('./core/fsutils');
 
+const clp = require('./core/commander');
 const getHealth = require('./core/health');
 const setStyle = require('./core/setConsoleStyle');
 const timeNormalize = global.Utils.getTimeString;
@@ -664,18 +665,24 @@ var changePrompt = prompt => {
 };
 
 // Ignore规则相关
-var getIgnoreRules = ignorelist => {
+var generateIgnoreRules = ignorelist => {
 	var ignores = [];
 	// 将忽视规则正则化
 	ignorelist.map(ignore => {
-		ignores.push(ignore);
-		var reg = '^' + ignore
-			.replace(/\./g, '\\.')
-			.replace(/\*/g, '.*')
-			.replace(/\r/g, '\\r')
-			.replace(/\?/g, '.?')
-			.replace(/\\/g, '\\');
-		reg = new RegExp(reg, "i");
+		var reg;
+		if (ignore.match(/\/.*\//)) {
+			reg = new RegExp(ignore.substring(1, ignore.length - 1), "i");
+		}
+		else {
+			ignores.push(ignore);
+			reg = '^' + ignore
+				.replace(/\./g, '\\.')
+				.replace(/\*/g, '.*')
+				.replace(/\r/g, '\\r')
+				.replace(/\?/g, '.?')
+				.replace(/\\/g, '\\');
+			reg = new RegExp(reg, "i");
+		}
 		ignores.push(reg);
 	});
 	return ignores;
@@ -691,6 +698,7 @@ var checkIgnoreRule = fileName => {
 	});
 };
 
+// 监控相关
 var deamonWatch = null;
 var configWatch = null;
 var fileWatchers = {};
@@ -756,6 +764,30 @@ var watchTrees = groups => {
 		});
 	}
 };
+
+// 历史相关
+var omniHistory = {
+	last: { changed: [], failed: [] },
+	total: { changed: [], failed: [] }
+};
+omniHistory.record = (changed, failed) => {
+	omniHistory.last.changed = changed;
+	omniHistory.last.failed = failed;
+	changed.map(path => {
+		var index = omniHistory.total.failed.indexOf(path);
+		if (index >= 0) omniHistory.total.failed.splice(index, 1);
+		index = omniHistory.total.changed.indexOf(path);
+		if (index < 0) omniHistory.total.changed.push(path);
+	});
+	failed.map(path => {
+		var index = omniHistory.total.changed.indexOf(path);
+		if (index >= 0) omniHistory.total.changed.splice(index, 1);
+		index = omniHistory.total.failed.indexOf(path);
+		if (index < 0) omniHistory.total.failed.push(path);
+	});
+};
+
+// 主业务
 var initialGroups = list => new Promise((resolve, reject) => {
 	var groups = {};
 	var groupCount = Object.keys(list).length;
@@ -897,10 +929,6 @@ var launchShowDiff = async () => {
 	}
 };
 
-// 命令行控制
-const config = { showHidden: false, depth: 5, colors: true };
-const clp = require('./core/commander');
-
 // 初始化命令行解析
 var cmdLauncher = clp({
 	title: '同步者 v0.1.0',
@@ -949,7 +977,7 @@ var cmdLauncher = clp({
 	syncConfig.ignores = config.ignore || [];
 	syncConfig.group = config.group || {};
 
-	syncConfig.ignores = getIgnoreRules(syncConfig.ignores);
+	syncConfig.ignores = generateIgnoreRules(syncConfig.ignores);
 	for (let group in syncConfig.group) {
 		syncConfig.group[group] = syncConfig.group[group].map(path => path.replace(/^~/, process.env.HOME));
 	}
@@ -983,7 +1011,7 @@ var cmdLauncher = clp({
 
 		if (!!config) {
 			syncConfig.ignores = config.ignore;
-			syncConfig.ignores = getIgnoreRules(syncConfig.ignores);
+			syncConfig.ignores = generateIgnoreRules(syncConfig.ignores);
 			syncConfig.group = config.group;
 			for (let group in syncConfig.group) {
 				syncConfig.group[group] = syncConfig.group[group].map(path => path.replace(/^~/, process.env.HOME));
@@ -1271,15 +1299,6 @@ var rtmLauncher = clp({
 	message.push('    分组情况请用 list 命令查看。');
 	logger.log(message.join('\n'));
 })
-.on('delete', (params, all, command) => {
-	var files = params.files;
-	if (!files || files.length === 0) {
-		logger.error('缺少文件参数！');
-	}
-	else {
-		files.map(f => logger.log('文件 ' + f + ' 删除ing...'));
-	}
-})
 .on('create', (params, all, command) => {
 	var files = params.files;
 	if (!files || files.length === 0) {
@@ -1287,6 +1306,15 @@ var rtmLauncher = clp({
 	}
 	else {
 		files.map(f => logger.log('文件 ' + f + ' 创建ing...'));
+	}
+})
+.on('delete', (params, all, command) => {
+	var files = params.files;
+	if (!files || files.length === 0) {
+		logger.error('缺少文件参数！');
+	}
+	else {
+		files.map(f => logger.log('文件 ' + f + ' 删除ing...'));
 	}
 })
 .on('copy', (params, all, command) => {

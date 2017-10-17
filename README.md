@@ -27,13 +27,14 @@ CLI支持简单交互，如等待输入、多选、进度条更新等。
 
 - 外部命令
 
-`--help|-h --config|-c <config> --ignore|-i --deamon|-d [duration] --silence|-s --web|-w`
+`--help|-h --config|-c <config> --showdiff|-sd --ignore|-i --deamon|-d [duration] --silence|-s --web|-w`
 
 参数|缩写|说明
 -|-|-
 --help | -h | 显示帮助
 --config | -c | 配置文档地址
 ||`<config>` ： 配置文件地址
+--showdiff | -sd | 只查看文件变更状态而不同步
 --ignore | -i | 是否忽略删除
 --deamon | -d | 是否启用监控模式，可配置自动监控时间间隔，默认时间为十分钟
 ||`[duration]` ： 可选值：数值 ； 默认值：10
