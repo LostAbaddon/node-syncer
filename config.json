@@ -17,8 +17,7 @@
 		],
 		"core": [
 			"~/Documents/MyWorld/Codes/Syncer/core",
-			"~/Documents/MyWorld/Codes/Present/src/core",
-			"~/tmp/test"
+			"~/Documents/MyWorld/Codes/Present/src/core"
 		],
 		"codes": [
 			"~/Documents/MyWorld/Codes",
@@ -31,11 +30,6 @@
 		"dailylife": [
 			"~/Documents/MyWorld/生活记录.xlsx",
 			"~/Library/Mobile Documents/com~apple~CloudDocs/Documents/生活记录.xlsx"
-		],
-		"test": [
-			"~/Documents/MyWorld/Codes/Syncer/core/extend.js",
-			"~/Documents/MyWorld/Codes/Present/src/core/extend.js",
-			"~/Documents/MyWorld/Codes/Present/src/core/shit.js"
 		]
 	},
 	"monitor": 600,

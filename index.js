@@ -28,6 +28,16 @@ const logger = global.logger(loglev);
 const configPath = process.cwd() + '/config.json';
 const deamonDuration = 60;
 
+// 系统级错误处理
+process.on('unhandledRejection', (reason, p) => {
+	logger.error('Unhandled Rejection:', reason);
+	logger.error(p);
+});
+process.on('uncaughtException', err => {
+	logger.error('Uncaught Exception:');
+	logger.error(err);
+});
+
 // 符号相关
 var setSymbols = (host, symbols) => {
 	symbols.map(symbol => {
@@ -594,6 +604,7 @@ var combileList = (list, changed, failed) => {
 // 配置
 var syncConfig = {
 	file: configPath,
+	showdiff: false,
 	ignore: false,
 	deamon: false,
 	silence: true,
@@ -685,6 +696,7 @@ var configWatch = null;
 var fileWatchers = {};
 var watcherTrigger = null;
 var treeWatcher = (path, isFile) => (stat, file) => {
+	if (checkIgnoreRule(file)) return;
 	if (!!watcherTrigger) clearTimeout(watcherTrigger);
 	watcherTrigger = setTimeout(() => {
 		changePrompt(syncConfig.syncPrompt);
@@ -827,8 +839,8 @@ var launchMission = async notFirstLaunch => {
 		if (changed + failed === 0) continue;
 		hasChange += changed + failed;
 		let message = setStyle(setStyle('同步 ' + group + '： ', 'bold') + (changed + failed) + ' 个文件/目录', 'underline')
-		if (changed > 0) message += '\n        ' + setStyle(setStyle('同步成功： ', 'bold') + changed + ' 个文件/目录', 'green');
-		if (failed > 0) message += '\n        ' + setStyle(setStyle('同步失败： ', 'bold') + failed + ' 个文件/目录', 'magenta');
+		if (changed > 0) message += '\n            ' + setStyle(setStyle('同步成功： ', 'bold') + changed + ' 个文件/目录', 'green');
+		if (failed > 0) message += '\n            ' + setStyle(setStyle('同步失败： ', 'bold') + failed + ' 个文件/目录', 'magenta');
 		log(message);
 	}
 	hasChange = hasChange > 0;
@@ -850,14 +862,40 @@ var launchMission = async notFirstLaunch => {
 		}, syncConfig.duration * 1000);
 	}
 };
+var launchShowDiff = async () => {
+	var log = console.log;
 
-process.on('unhandledRejection', (reason, p) => {
-	logger.error('Unhandled Rejection:', reason);
-});
-process.on('uncaughtException', err => {
-	logger.error('Uncaught Exception:');
-	logger.error(err);
-});
+	log('开始分析目录组......');
+	syncGroups = await initialGroups(syncConfig.group);
+
+	log(setStyle('文件同步状态：', 'bold underline'));
+	for (let group in syncGroups) {
+		group = syncGroups[group];
+		let tree = group.tree;
+		tree = tree.filter(file => file[1] !== SyncState.SYNCED);
+		if (tree.length === 0) continue;
+		if (group.mode === WatchMode.FILE) {
+			return;
+			log('    ' + setStyle('文件同步：', 'bold') + ' ' + group.name);
+			tree.map(path => {
+				var len = getCLLength(path[0]), vlen = len + 2;
+				vlen = Math.ceil(vlen / syncConfig.mapPaddingLevel) * syncConfig.mapPaddingLevel;
+				if (vlen < syncConfig.mapPaddingLeft) vlen = syncConfig.mapPaddingLeft;
+				log('        ' + path[0] + String.blank(vlen - len) + ' | ' + SyncState.toString(path[1], true));
+			});
+		}
+		else if (group.mode === WatchMode.FOLDER) {
+			log('    ' + setStyle('目录同步：', 'bold') + ' ' + group.name);
+			tree = tree.filter(path => path[2] === WatchMode.FILE);
+			tree.map(path => {
+				var len = getCLLength(path[0]), vlen = len + 2;
+				vlen = Math.ceil(vlen / syncConfig.mapPaddingLevel) * syncConfig.mapPaddingLevel;
+				if (vlen < syncConfig.mapPaddingLeft) vlen = syncConfig.mapPaddingLeft;
+				log('        ' + path[0] + String.blank(vlen - len) + ' | ' + SyncState.toString(path[1], true));
+			});
+		}
+	}
+};
 
 // 命令行控制
 const config = { showHidden: false, depth: 5, colors: true };
@@ -870,12 +908,14 @@ var cmdLauncher = clp({
 })
 .describe('多文件夹自动同步者。\n' + setStyle('当前版本：', 'bold') + 'v0.1.0')
 .addOption('--config -c <config> >> 配置文档地址')
+.addOption('--showdiff -sd >> 只查看变更结果')
 .addOption('--ignore -i >> 是否忽略删除')
 .addOption('--deamon -d [duration(^\\d+$|^\\d+\\.\\d*$)=10] >> 是否启用监控模式，可配置自动监控时间间隔，默认时间为十分钟')
 .addOption('--silence -s >> 不启用命令行控制面板')
 .addOption('--web -w >> 启用Web后台模式' + setStyle('【待开发】', ['green', 'bold']))
 .on('command', params => {
 	if (!!params.config) syncConfig.file = params.config;
+	if (!!params.showdiff) syncConfig.showdiff = params.showdiff;
 	if (!!params.ignore) syncConfig.ignore = params.ignore;
 	if (!!params.deamon) {
 		syncConfig.deamon = params.deamon;
@@ -914,6 +954,11 @@ var cmdLauncher = clp({
 		syncConfig.group[group] = syncConfig.group[group].map(path => path.replace(/^~/, process.env.HOME));
 	}
 
+	if (syncConfig.showdiff) {
+		launchShowDiff();
+		return;
+	}
+
 	if (!syncConfig.silence) {
 		rtmLauncher.launch();
 
@@ -949,7 +994,8 @@ var cmdLauncher = clp({
 	});
 
 	launchMission();
-});
+})
+;
 
 // 监控系统运行状态
 var healthWatcher = null;
