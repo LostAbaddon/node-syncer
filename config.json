@@ -8,7 +8,8 @@
 		"Icon?",
 		"node_modules",
 		"package-lock.json",
-		"/.*\\d+\\..*/"
+		"/.*\\d+\\..*/",
+		"/.*冲突副本.*/"
 	],
 	"group": {
 		"work": [

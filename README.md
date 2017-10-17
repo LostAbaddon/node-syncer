@@ -27,7 +27,7 @@ CLI支持简单交互，如等待输入、多选、进度条更新等。
 
 - 外部命令
 
-`--help|-h --config|-c <config> --showdiff|-sd --ignore|-i --deamon|-d [duration] --silence|-s --web|-w`
+`--help|-h --config|-c <config> --showdiff|-sd --deaf|-df --ignore|-i --deamon|-d [duration] --silence|-s --web|-w`
 
 参数|缩写|说明
 -|-|-
@@ -35,6 +35,7 @@ CLI支持简单交互，如等待输入、多选、进度条更新等。
 --config | -c | 配置文档地址
 ||`<config>` ： 配置文件地址
 --showdiff | -sd | 只查看文件变更状态而不同步
+--deaf | -df | 失聪模式，不监听文件与目录的改动，只定时巡查
 --ignore | -i | 是否忽略删除
 --deamon | -d | 是否启用监控模式，可配置自动监控时间间隔，默认时间为十分钟
 ||`[duration]` ： 可选值：数值 ； 默认值：10
