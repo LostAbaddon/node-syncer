@@ -1181,12 +1181,11 @@ var rtmLauncher = clp({
 	all.nohint = true;
 	var duration = param.duration * 1000;
 	var delay = 100, progress = 0;
-	if (delay > duration) delay = duration / 3;
+	if (delay > duration) delay = duration / 10;
 	command.cli.waitProcessbar('获取同步者健康状态', 100, 1);
 	var timer = setInterval(() => {
 		progress += delay;
 		command.cli.updateProcessbar(0, progress / duration);
-		command.cli.cursor(-9999, -1);
 		if (progress >= duration) {
 			if (timer) clearInterval(timer);
 			timer = null;

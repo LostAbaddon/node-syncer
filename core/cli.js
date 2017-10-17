@@ -284,7 +284,7 @@ class CLI {
 		var p = Math.round((this.processLength - 5) * percent);
 		var q = this.processLength - 5 - p;
 		console.log(this.hints.answer + String.blank(4 - j.length) + j + ' ' + setStyle(String.blank(p), this.hints.probarFGStyle) + setStyle(String.blank(q), this.hints.probarBGStyle));
-		this.cursor(-9990, delta);
+		this.cursor(-9990, delta - 1);
 		var done = !this.processPercent.some(p => p < 1);
 		if (done) {
 			this.shouldStopWaiting = false;
