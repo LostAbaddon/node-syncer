@@ -684,11 +684,11 @@ var deamonWatch = null;
 var configWatch = null;
 var fileWatchers = {};
 var watcherTrigger = null;
-var treeWatcher = path => (stat, file) => {
+var treeWatcher = (path, isFile) => (stat, file) => {
 	if (!!watcherTrigger) clearTimeout(watcherTrigger);
 	watcherTrigger = setTimeout(() => {
 		changePrompt(syncConfig.syncPrompt);
-		logger.log(setStyle('发现文件改动', 'blue bold') + '（' + timeNormalize() + '）：' + path + file);
+		logger.log(setStyle('发现文件改动', 'blue bold') + '（' + timeNormalize() + '）：' + path + (!!isFile ? '' : file));
 		changePrompt();
 		launchMission(true);
 	}, 1000);
@@ -706,6 +706,22 @@ var watchTrees = groups => {
 	razeAllWatchers();
 	for (let group in groups) {
 		group = groups[group];
+		if (group.mode === WatchMode.FILE) {
+			group.tree.map(path => {
+				path = path[0];
+				if (!!fileWatchers[path]) return;
+				var watch;
+				try {
+					watch = fs.watch(path, treeWatcher(path, true));
+				}
+				catch (err) {
+					logger.error(err.message);
+					console.log(err);
+				}
+				if (!!watch) fileWatchers[path] = watch;
+			});
+			continue;
+		}
 		let tree = group.tree;
 		tree = tree.filter(path => path[2] === WatchMode.FOLDER);
 		if (tree.length === 0) continue;
@@ -1224,7 +1240,7 @@ var rtmLauncher = clp({
 		logger.log(setStyle('世界已重归虚无。。。', 'red bold'));
 		changePrompt();
 		process.exit();
-	}, 1000);
+	}, 200);
 });
 
 cmdLauncher.launch();
