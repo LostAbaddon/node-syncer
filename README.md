@@ -12,6 +12,43 @@
 
 ----
 
+命令行说明
+----
+
+- 外部命令
+
+`--help|-h --config|-c <config> --ignore|-i --deamon|-d [duration] --silence|-s --web|-w`
+
+参数|缩写|说明
+-|-|-
+--help | -h | 显示帮助
+--config | -c | 配置文档地址 <config>
+--ignore | -i | 是否忽略删除
+--deamon | -d | 是否启用监控模式，可配置自动监控时间间隔，默认时间为十分钟
+||[duration] 可选值：/^\d+$|^\d+\.\d*$/； 默认值：10
+--silence | -s | 不启用命令行控制面板
+--web | -w | 启用Web后台模式【待开发】
+
+- 内部命令
+
+```
+refresh|re
+start|st
+stop|sp
+list|lt --group|-g <group> --files|-f <path> --all|-a
+delete|del [...files] --group|-g <group>
+create|new [...files] --group|-g <group> --folder|-f
+copy|cp <source> <target> --group|-g <group>
+health|ht [duration] --interval|-i [interval] --stop|-s
+history|his --all|-a
+status|stt
+```
+
+GitHub 风格命令，可多条命令顺序使用。
+在 CLI 模式下使用 help 指令查看具体内容。
+
+----
+
 v1.0.1（开发中）
 ----
 
