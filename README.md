@@ -15,6 +15,16 @@
 命令行说明
 ----
 
+- 说明
+
+采用自建的命令行交互工具——CLP（Command Line Parser）与CLI（Command Line Interface）。
+
+CLP采用GitHub风格解析规则：主参数、主开关、子命令、子命令参数、子命令开关。
+多条子命令可串联执行，每条命令后跟参数与开关，开关顺序随意，开关后可跟参数。
+支持必填参数、可选参数与参数列表，参数支持过滤与默认值设置。
+
+CLI支持简单交互，如等待输入、多选、进度条更新等。
+
 - 外部命令
 
 `--help|-h --config|-c <config> --ignore|-i --deamon|-d [duration] --silence|-s --web|-w`
