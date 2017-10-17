@@ -1005,6 +1005,35 @@ var rtmLauncher = clp({
 	if (params.mission.length > 0) return;
 	logger.error('不存在该指令哦！输入 help 查看命令~');
 })
+.on('quit', (param, command) => {
+	if (!!healthWatcher) {
+		clearInterval(healthWatcher);
+		changePrompt(syncConfig.syncPrompt);
+		logger.log('结束监控者。。。');
+		changePrompt();
+	}
+	razeAllWatchers();
+	if (!!deamonWatch) {
+		clearTimeout(deamonWatch);
+		if (configWatch) configWatch.close();
+		configWatch = null;
+		changePrompt(syncConfig.syncPrompt);
+		logger.log('结束巡视者。。。');
+		changePrompt();
+	}
+	param.msg = '同步者已死……';
+})
+.on('exit', (param, command) => {
+	changePrompt(setStyle(syncConfig.syncPrompt, 'red bold'));
+	logger.log(setStyle('世界崩塌中。。。', 'red bold'));
+	changePrompt();
+	setTimeout(function () {
+		changePrompt(setStyle(syncConfig.syncPrompt, 'red bold'));
+		logger.log(setStyle('世界已重归虚无。。。', 'red bold'));
+		changePrompt();
+		process.exit();
+	}, 200);
+})
 .on('refresh', (params, all, command) => {
 	razeAllWatchers();
 	if (!!deamonWatch) clearTimeout(deamonWatch);
@@ -1148,38 +1177,31 @@ var rtmLauncher = clp({
 		logger.log(message.join('\n'));
 	}
 })
-.on('delete', (params, all, command) => {
-	var files = params.files;
-	if (!files || files.length === 0) {
-		logger.error('缺少文件参数！');
-	}
-	else {
-		files.map(f => logger.log('文件 ' + f + ' 删除ing...'));
-	}
-})
-.on('create', (params, all, command) => {
-	var files = params.files;
-	if (!files || files.length === 0) {
-		logger.error('缺少文件参数！');
-	}
-	else {
-		files.map(f => logger.log('文件 ' + f + ' 创建ing...'));
-	}
-})
-.on('copy', (params, all, command) => {
-	var source = params.source, target = params.target;
-	if (!source) logger.error('缺少源文件路径！');
-	else if (!target) logger.error('缺少目标文件路径！');
-	logger.log('复制文件 ' + source + ' 到 ' + target + ' 中...');
-})
 .on('health', (param, all, command) => {
-	getHealth(param.duration * 1000, result => {
-		showHealth(result, command);
+	all.nohint = true;
+	var duration = param.duration * 1000;
+	var delay = 100, progress = 0;
+	if (delay > duration) delay = duration / 3;
+	command.cli.waitProcessbar('获取同步者健康状态', 100, 1);
+	var timer = setInterval(() => {
+		progress += delay;
+		command.cli.updateProcessbar(0, progress / duration);
+		command.cli.cursor(-9999, -1);
+		if (progress >= duration) {
+			if (timer) clearInterval(timer);
+			timer = null;
+		}
+	}, delay);
+	getHealth(duration, result => {
+		command.cli.updateProcessbar(0, 1);
+		if (timer) clearInterval(timer);
+		timer = null;
+		setImmediate(() => {showHealth(result, command)});
 	});
 	if (!isNaN(param.interval)) {
 		if (!!healthWatcher) clearInterval(healthWatcher);
 		healthWatcher = setInterval(async () => {
-			var result = await getHealth(param.duration * 1000);
+			var result = await getHealth(duration * 1000);
 			showHealth(result, command);
 		}, param.interval * 1000);
 	}
@@ -1204,6 +1226,30 @@ var rtmLauncher = clp({
 	message.push('    分组情况请用 list 命令查看。');
 	logger.log(message.join('\n'));
 })
+.on('delete', (params, all, command) => {
+	var files = params.files;
+	if (!files || files.length === 0) {
+		logger.error('缺少文件参数！');
+	}
+	else {
+		files.map(f => logger.log('文件 ' + f + ' 删除ing...'));
+	}
+})
+.on('create', (params, all, command) => {
+	var files = params.files;
+	if (!files || files.length === 0) {
+		logger.error('缺少文件参数！');
+	}
+	else {
+		files.map(f => logger.log('文件 ' + f + ' 创建ing...'));
+	}
+})
+.on('copy', (params, all, command) => {
+	var source = params.source, target = params.target;
+	if (!source) logger.error('缺少源文件路径！');
+	else if (!target) logger.error('缺少目标文件路径！');
+	logger.log('复制文件 ' + source + ' 到 ' + target + ' 中...');
+})
 .on('start', (param, all, command) => {
 	console.log('Start Deamon...');
 })
@@ -1213,34 +1259,6 @@ var rtmLauncher = clp({
 .on('history', (param, all, command) => {
 	console.log('Show History...');
 })
-.on('quit', (param, command) => {
-	if (!!healthWatcher) {
-		clearInterval(healthWatcher);
-		changePrompt(syncConfig.syncPrompt);
-		logger.log('结束监控者。。。');
-		changePrompt();
-	}
-	razeAllWatchers();
-	if (!!deamonWatch) {
-		clearTimeout(deamonWatch);
-		if (configWatch) configWatch.close();
-		configWatch = null;
-		changePrompt(syncConfig.syncPrompt);
-		logger.log('结束巡视者。。。');
-		changePrompt();
-	}
-	param.msg = '同步者已死……';
-})
-.on('exit', (param, command) => {
-	changePrompt(setStyle(syncConfig.syncPrompt, 'red bold'));
-	logger.log(setStyle('世界崩塌中。。。', 'red bold'));
-	changePrompt();
-	setTimeout(function () {
-		changePrompt(setStyle(syncConfig.syncPrompt, 'red bold'));
-		logger.log(setStyle('世界已重归虚无。。。', 'red bold'));
-		changePrompt();
-		process.exit();
-	}, 200);
-});
+;
 
 cmdLauncher.launch();
