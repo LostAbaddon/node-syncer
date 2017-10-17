@@ -44,6 +44,7 @@ var syncConfig = {
 	file: configPath,
 	showdiff: false,
 	ignore: false,
+	deaf: false,
 	deamon: false,
 	silence: true,
 	duration: null,
@@ -704,6 +705,7 @@ var configWatch = null;
 var fileWatchers = {};
 var watcherTrigger = null;
 var treeWatcher = (path, isFile) => (stat, file) => {
+	if (syncConfig.deaf) return;
 	if (checkIgnoreRule(file)) return;
 	if (!!watcherTrigger) clearTimeout(watcherTrigger);
 	watcherTrigger = setTimeout(() => {
@@ -724,6 +726,7 @@ var razeAllWatchers = () => {
 };
 var watchTrees = groups => {
 	razeAllWatchers();
+	if (syncConfig.deaf) return;
 	for (let group in groups) {
 		group = groups[group];
 		if (group.mode === WatchMode.FILE) {
@@ -938,6 +941,7 @@ var cmdLauncher = clp({
 .describe('多文件夹自动同步者。\n' + setStyle('当前版本：', 'bold') + 'v0.1.0')
 .addOption('--config -c <config> >> 配置文档地址')
 .addOption('--showdiff -sd >> 只查看变更结果')
+.addOption('--deaf -df >> 失聪模式')
 .addOption('--ignore -i >> 是否忽略删除')
 .addOption('--deamon -d [duration(^\\d+$|^\\d+\\.\\d*$)=10] >> 是否启用监控模式，可配置自动监控时间间隔，默认时间为十分钟')
 .addOption('--silence -s >> 不启用命令行控制面板')
@@ -945,6 +949,7 @@ var cmdLauncher = clp({
 .on('command', params => {
 	if (!!params.config) syncConfig.file = params.config;
 	if (!!params.showdiff) syncConfig.showdiff = params.showdiff;
+	if (!!params.deaf) syncConfig.deaf = params.deaf;
 	if (!!params.ignore) syncConfig.ignore = params.ignore;
 	if (!!params.deamon) {
 		syncConfig.deamon = params.deamon;
@@ -973,8 +978,15 @@ var cmdLauncher = clp({
 			config = {};
 		}
 	}
+
 	syncConfig.deamon = syncConfig.deamon || config.deamonMode || false;
 	syncConfig.duration = syncConfig.duration || config.monitor || deamonDuration;
+	syncConfig.silence = syncConfig.silence || config.silence || !syncConfig.deamon;
+	syncConfig.deaf = syncConfig.deaf || config.deaf || false;
+	syncConfig.web = syncConfig.web || config.web || false;
+	syncConfig.syncPrompt = config.syncPrompt || syncConfig.syncPrompt;
+	syncConfig.mapPaddingLeft = config.mapPaddingLeft || syncConfig.mapPaddingLeft;
+	syncConfig.mapPaddingLevel = config.mapPaddingLevel || syncConfig.mapPaddingLevel;
 	syncConfig.ignores = config.ignore || [];
 	syncConfig.group = config.group || {};
 
@@ -1291,6 +1303,8 @@ var rtmLauncher = clp({
 	message.push('    ' + setStyle(title, 'bold') + String.blank(padding - getCLLength(title)) + (syncConfig.deamon ? setStyle('开启', 'green') : '关闭'));
 	title = '静默模式：';
 	message.push('    ' + setStyle(title, 'bold') + String.blank(padding - getCLLength(title)) + (syncConfig.silence ? setStyle('开启', 'green') : '关闭'));
+	title = '失聪模式：';
+	message.push('    ' + setStyle(title, 'bold') + String.blank(padding - getCLLength(title)) + (syncConfig.deaf ? setStyle('开启', 'green') : '关闭'));
 	title = '巡视间隔：';
 	message.push('    ' + setStyle(title, 'bold') + String.blank(padding - getCLLength(title)) + syncConfig.duration + '秒');
 	title = '新增漠视模式：';
