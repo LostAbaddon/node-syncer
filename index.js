@@ -231,7 +231,7 @@ class Folder {
 		dirList.sort((fa, fb) => fa.name.toLowerCase() > fb.name.toLowerCase());
 		dirList.map(f => {
 			var state = f.state(range);
-			folderList.push([f.path, state]);
+			folderList.push([f.path, state, WatchMode.FOLDER]);
 			var list = f.tree(range);
 			list.unshift(0);
 			list.unshift(folderList.length);
@@ -245,7 +245,7 @@ class Folder {
 		dirList.sort((fa, fb) => fa.name.toLowerCase() > fb.name.toLowerCase());
 		dirList.map(f => {
 			var state = f.state(range);
-			fileList.push([f.path, state]);
+			fileList.push([f.path, state, WatchMode.FILE]);
 		});
 		
 		fileList.unshift(0);
@@ -431,7 +431,7 @@ class Group {
 		var range = this.range;
 		if (this.mode === WatchMode.FILE) {
 			let state = this.map.files.single_file.state(range);
-			return range.map(f => [f, state]);
+			return range.map(f => [f, state, WatchMode.FILE]);
 		}
 		return this.map.tree(range);
 	}
@@ -629,7 +629,7 @@ const RegMonoWidthChars = /[\x00-\xff–]+/g;
 var getCLLength = text => {
 	var len = text.length;
 	var ascii = text.match(RegMonoWidthChars);
-	if (!ascii) ascii = '';
+	if (!ascii) ascii = [''];
 	return len * 2 - ascii.join('').length;
 };
 var waitTick = async () => new Promise((res, rej) => setImmediate(res));
@@ -682,6 +682,42 @@ var checkIgnoreRule = fileName => {
 
 var deamonWatch = null;
 var configWatch = null;
+var fileWatchers = {};
+var watcherTrigger = null;
+var treeWatcher = path => (stat, file) => {
+	if (!!watcherTrigger) clearTimeout(watcherTrigger);
+	watcherTrigger = setTimeout(() => {
+		changePrompt(syncConfig.syncPrompt);
+		logger.log(setStyle('发现文件改动', 'blue bold') + '（' + timeNormalize() + '）：' + path + file);
+		changePrompt();
+		launchMission(true);
+	}, 1000);
+};
+var razeAllWatchers = () => {
+	for (let watch in fileWatchers) {
+		watch = fileWatchers[watch];
+		if (!watch) continue;
+		watch.close();
+	}
+};
+var watchTrees = groups => {
+	razeAllWatchers();
+	for (let group in groups) {
+		group = groups[group];
+		let tree = group.tree;
+		tree = tree.filter(path => path[2] === WatchMode.FOLDER);
+		if (tree.length === 0) continue;
+		tree = tree.map(path => path[0]);
+		var sources = group.map.source;
+		tree.map(path => {
+			sources.map(source => {
+				var url = source + path;
+				if (!!fileWatchers[url]) return;
+				var watch = fs.watch(url, treeWatcher(url));
+			});
+		});
+	}
+};
 var initialGroups = list => new Promise((resolve, reject) => {
 	var groups = {};
 	var groupCount = Object.keys(list).length;
@@ -778,6 +814,7 @@ var launchMission = async notFirstLaunch => {
 	}
 
 	if (syncConfig.deamon) {
+		watchTrees(syncGroups);
 		if (!!deamonWatch) clearTimeout(deamonWatch);
 		deamonWatch = setTimeout(() => {
 			changePrompt(syncConfig.syncPrompt);
@@ -808,7 +845,7 @@ var cmdLauncher = clp({
 .describe('多文件夹自动同步者。\n' + setStyle('当前版本：', 'bold') + 'v0.1.0')
 .addOption('--config -c <config> >> 配置文档地址')
 .addOption('--ignore -i >> 是否忽略删除')
-.addOption('--deamon -d [duration(^\\d+$|^\\d+\\.\\d*$)=1] >> 是否启用监控模式，可配置自动监控时间间隔，默认时间为一分钟')
+.addOption('--deamon -d [duration(^\\d+$|^\\d+\\.\\d*$)=10] >> 是否启用监控模式，可配置自动监控时间间隔，默认时间为十分钟')
 .addOption('--silence -s >> 不启用命令行控制面板')
 .addOption('--web -w >> 启用Web后台模式' + setStyle('【待开发】', ['green', 'bold']))
 .on('command', params => {
@@ -936,12 +973,14 @@ var rtmLauncher = clp({
 .addOption('--stop -s >> 定制定式更新')
 .add('history|his >> 查看更新文件历史')
 .addOption('--all -a >> 查看启动以来的更新文件历史')
+.add('status|stt >> 显示当前配置')
 .on('command', (params, command) => {
 	if (Object.keys(params).length > 1) return;
 	if (params.mission.length > 0) return;
 	logger.error('不存在该指令哦！输入 help 查看命令~');
 })
 .on('refresh', (params, all, command) => {
+	razeAllWatchers();
 	if (!!deamonWatch) clearTimeout(deamonWatch);
 	launchMission();
 })
@@ -1122,6 +1161,32 @@ var rtmLauncher = clp({
 		if (!!healthWatcher) clearInterval(healthWatcher);
 	}
 })
+.on('status', (param, all, command) => {
+	var message = [ setStyle('当前同步者配置：', 'bold') ], title, padding = 20;
+	title = '配置文件地址：';
+	message.push('    ' + setStyle(title, 'bold') + String.blank(padding - getCLLength(title)) + syncConfig.file);
+	title = '巡视者模式：';
+	message.push('    ' + setStyle(title, 'bold') + String.blank(padding - getCLLength(title)) + (syncConfig.deamon ? setStyle('开启', 'green') : '关闭'));
+	title = '静默模式：';
+	message.push('    ' + setStyle(title, 'bold') + String.blank(padding - getCLLength(title)) + (syncConfig.silence ? setStyle('开启', 'green') : '关闭'));
+	title = '巡视间隔：';
+	message.push('    ' + setStyle(title, 'bold') + String.blank(padding - getCLLength(title)) + syncConfig.duration + '秒');
+	title = '新增漠视模式：';
+	message.push('    ' + setStyle(title, 'bold') + String.blank(padding - getCLLength(title)) + (syncConfig.ignore ? setStyle('开启', 'green') : '关闭'));
+	title = '网络值守模式：';
+	message.push('    ' + setStyle(title, 'bold') + String.blank(padding - getCLLength(title)) + (syncConfig.web ? setStyle('开启', 'green') : '关闭'));
+	message.push('    分组情况请用 list 命令查看。');
+	logger.log(message.join('\n'));
+})
+.on('start', (param, all, command) => {
+	console.log('Start Deamon...');
+})
+.on('stop', (param, all, command) => {
+	console.log('Stop Deamon...');
+})
+.on('history', (param, all, command) => {
+	console.log('Show History...');
+})
 .on('exit', (param, command) => {
 	if (!!healthWatcher) {
 		clearInterval(healthWatcher);
@@ -1129,6 +1194,7 @@ var rtmLauncher = clp({
 		logger.log('结束监控者。。。');
 		changePrompt();
 	}
+	razeAllWatchers();
 	if (!!deamonWatch) {
 		clearTimeout(deamonWatch);
 		if (configWatch) configWatch.close();
