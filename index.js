@@ -694,10 +694,12 @@ var treeWatcher = path => (stat, file) => {
 	}, 1000);
 };
 var razeAllWatchers = () => {
+	if (!!watcherTrigger) clearTimeout(watcherTrigger);
 	for (let watch in fileWatchers) {
-		watch = fileWatchers[watch];
-		if (!watch) continue;
-		watch.close();
+		let w = fileWatchers[watch];
+		if (!w) continue;
+		w.close();
+		fileWatchers[watch] = null;
 	}
 };
 var watchTrees = groups => {
@@ -713,7 +715,15 @@ var watchTrees = groups => {
 			sources.map(source => {
 				var url = source + path;
 				if (!!fileWatchers[url]) return;
-				var watch = fs.watch(url, treeWatcher(url));
+				var watch;
+				try {
+					watch = fs.watch(url, treeWatcher(url));
+				}
+				catch (err) {
+					logger.error(err.message);
+					console.log(err);
+				}
+				if (!!watch) fileWatchers[url] = watch;
 			});
 		});
 	}
@@ -1187,7 +1197,7 @@ var rtmLauncher = clp({
 .on('history', (param, all, command) => {
 	console.log('Show History...');
 })
-.on('exit', (param, command) => {
+.on('quit', (param, command) => {
 	if (!!healthWatcher) {
 		clearInterval(healthWatcher);
 		changePrompt(syncConfig.syncPrompt);
@@ -1204,6 +1214,17 @@ var rtmLauncher = clp({
 		changePrompt();
 	}
 	param.msg = '同步者已死……';
+})
+.on('exit', (param, command) => {
+	changePrompt(setStyle(syncConfig.syncPrompt, 'red bold'));
+	logger.log(setStyle('世界崩塌中。。。', 'red bold'));
+	changePrompt();
+	setTimeout(function () {
+		changePrompt(setStyle(syncConfig.syncPrompt, 'red bold'));
+		logger.log(setStyle('世界已重归虚无。。。', 'red bold'));
+		changePrompt();
+		process.exit();
+	}, 1000);
 });
 
 cmdLauncher.launch();

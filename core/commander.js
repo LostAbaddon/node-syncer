@@ -960,8 +960,11 @@ const Parser = config => {
 			})
 			.onQuit(cli => {
 				var result = { msg: '' };
-				em.emit('exit', result, command);
+				em.emit('quit', result, command);
 				if (!!result.msg && result.msg.length > 0) cli.error(result.msg);
+			})
+			.onExit(cli => {
+				em.emit('exit', command);
 			});
 			command.cli = rl;
 

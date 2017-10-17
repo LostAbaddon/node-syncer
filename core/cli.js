@@ -32,6 +32,7 @@ class CLI {
 
 		this.requestCallback = null;
 		this.quitCallback = null;
+		this.exitCallback = null;
 
 		hints = hints || {};
 		this.hints = {};
@@ -63,6 +64,9 @@ class CLI {
 			if (key && key.ctrl && key.name == 'c') {
 				this.waiting = false;
 				this.close();
+				setImmediate(() => {
+					if (this.exitCallback) this.exitCallback();
+				});
 			}
 			if (!this.waiting) return;
 			if (key.name !== 'return') this.waitingInput = true;
@@ -317,6 +321,10 @@ class CLI {
 	}
 	onQuit (callback) {
 		this.quitCallback = callback;
+		return this;
+	}
+	onExit (callback) {
+		this.exitCallback = callback;
 		return this;
 	}
 }
