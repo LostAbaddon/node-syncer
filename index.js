@@ -39,6 +39,23 @@ process.on('uncaughtException', err => {
 	logger.error(err);
 });
 
+// 配置
+var syncConfig = {
+	file: configPath,
+	showdiff: false,
+	ignore: false,
+	deamon: false,
+	silence: true,
+	duration: null,
+	web: false,
+	ignores: [],
+	group: {},
+	syncPrompt: setStyle('同步者：', 'green bold'),
+	mapPaddingLeft: 80,
+	mapPaddingLevel: 20
+};
+var syncGroups = {};
+
 // 符号相关
 var setSymbols = (host, symbols) => {
 	symbols.map(symbol => {
@@ -602,23 +619,6 @@ var combileList = (list, changed, failed) => {
 	});
 };
 
-// 配置
-var syncConfig = {
-	file: configPath,
-	showdiff: false,
-	ignore: false,
-	deamon: false,
-	silence: true,
-	duration: null,
-	web: false,
-	ignores: [],
-	group: {},
-	syncPrompt: setStyle('同步者：', 'green bold'),
-	mapPaddingLeft: 80,
-	mapPaddingLevel: 20
-};
-var syncGroups = {};
-
 // 其它辅助
 var readJSON = file => new Promise((res, rej) => {
 	fs.readFile(file, (err, data) => {
@@ -856,6 +856,7 @@ var launchMission = async notFirstLaunch => {
 		list[3].map(p => {
 			if (changeList[3].indexOf(p) < 0) changeList[3].push(p);
 		});
+		omniHistory.record(changeList[2], changeList[3]);
 
 		log('有变更，重新分析分组......');
 		syncGroups = await initialGroups(syncConfig.group);
@@ -1299,6 +1300,27 @@ var rtmLauncher = clp({
 	message.push('    分组情况请用 list 命令查看。');
 	logger.log(message.join('\n'));
 })
+.on('history', (param, all, command) => {
+	var history, title, message = [];
+	if (!!param.all) {
+		title = '所有修改历史：';
+		history = omniHistory.total;
+	}
+	else {
+		title = '上次修改记录：';
+		history = omniHistory.last;
+	}
+	message.push(setStyle(title, 'bold underline'));
+	message.push('    ' + setStyle('同步成功文件：', 'green bold'));
+	history.changed.map(path => {
+		message.push('        ' + path);
+	});
+	message.push('    ' + setStyle('同步失败文件：', 'red bold'));
+	history.failed.map(path => {
+		message.push('        ' + path);
+	});
+	logger.log(message.join('\n'));
+})
 .on('create', (params, all, command) => {
 	var files = params.files;
 	if (!files || files.length === 0) {
@@ -1328,9 +1350,6 @@ var rtmLauncher = clp({
 })
 .on('stop', (param, all, command) => {
 	console.log('Stop Deamon...');
-})
-.on('history', (param, all, command) => {
-	console.log('Show History...');
 })
 ;
 
