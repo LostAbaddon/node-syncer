@@ -869,17 +869,21 @@ var createFilesAndFolders = (group, paths, isFolder, cb) => new Promise(async (r
 });
 var deleteFilesAndFolders = (group, paths, force, cb) => new Promise(async (res, rej) => {
 	handcraftCreating = true;
-	// create Codes/a.txt Codes/b cxx/aaa cxx/zzz cxx/www -g work
-	// del Codes/a.txt Codes/b cxx -f -g work
 
-	var range = group.range, files = [], stat;
+	var files = [], range, stat;
 	// 获取真实路径
-	paths.forEach(f => {
-		f = '/' + f.replace(/^\/+/, '').trim();
-		range.forEach(p => {
-			files.push(Path.normalize(p + f));
+	if (!!group) {
+		range = group.range;
+		paths.forEach(f => {
+			f = '/' + f.replace(/^\/+/, '').trim();
+			range.forEach(p => {
+				files.push(Path.normalize(p + f));
+			});
 		});
-	});
+	}
+	else {
+		files = paths.map(p => p.replace(/^~[\/\\]/, process.env.HOME + Path.sep));
+	}
 	stat = await fs.filterPath(files); // 拆分出文件和目录
 	paths = [];
 	stat.files.forEach(f => paths.push(f));
@@ -1522,34 +1526,12 @@ var rtmLauncher = clp({
 	await revokeMission(true);
 })
 .on('delete', async (params, all, command) => {
-	var group = params.group;
-	if (!group) {
-		command.showError('所属分组参数不能为空！');
-		return;
-	}
-	group = syncGroups[group];
-	if (!group) {
-		command.showError('所选分组不存在！');
-		return;
-	}
-	if (group.mode === WatchMode.NOTREADY) {
-		command.showError('所选分组检测中，请稍后再试！');
-		return;
-	}
-	if (group.mode === WatchMode.WRONG) {
-		command.showError('所选分组异常！');
-		return;
-	}
-	if (group.mode === WatchMode.FILE) {
-		command.showError('不可在文件同步组里删除文件/目录！');
-		return;
-	}
 	var paths = params.files;
 	if (!paths || paths.length === 0) {
 		command.showError('不可没有目标路径！');
 		return;
 	}
-	var force = !!params.force;
+	var group = params.group, force = !!params.force;
 	
 	await deleteFilesAndFolders(group, paths, force);
 
