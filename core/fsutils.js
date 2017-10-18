@@ -11,6 +11,7 @@
 
 const fs = require('fs');
 const Path = require('path');
+const setStyle = require('./setConsoleStyle');
 
 const IDLE = Symbol('IDLE');
 const BUSY = Symbol('BUSY');
@@ -24,6 +25,7 @@ var manager = {
 	prepare: {}
 };
 
+// 批量创建目录，自动处理依赖关系，并解决异步创建过程中的冲突问题
 fs.mkfolder = (path, cb) => new Promise(async (resolve, reject) => {
 	path = Path.normalize(path);
 	path = path.replace(new RegExp(Path.sep + '+$'), '');
@@ -138,3 +140,196 @@ var mkLoop = () => {
 		manager.prepare = {};
 	}
 };
+
+// 批量获取路径状态：不存在、文件、目录、其它
+fs.filterPath = (paths, cb) => new Promise((res, rej) => {
+	var count = paths.length, nonexist = [], files = [], folders = [], wrong = [];
+	paths.forEach(path => {
+		fs.stat(path, (err, stat) => {
+			if (!!err || !stat) {
+				nonexist.push(path);
+			}
+			else if (stat.isFile()) {
+				files.push(path);
+			}
+			else if (stat.isDirectory()) {
+				folders.push(path);
+			}
+			else {
+				wrong.push(path);
+			}
+			count --;
+			if (count > 0) return;
+			var result = { nonexist, files, folders, wrong };
+			res(result);
+			if (cb) cb(result);
+		});
+	});
+});
+// 批量创建文件夹
+fs.createFolders = (folders, logger) => new Promise((res, rej) => {
+	logger = logger || console;
+	var count = folders.length, result = { success: [], failed: [] };
+	if (count === 0) {
+		setImmediate(() => {
+			res(result);
+		});
+		return;
+	}
+	folders.forEach(async folder => {
+		logger.log(setStyle('创建目录：', 'bold') + folder);
+		var err = await fs.mkfolder(folder);
+		if (!!err) {
+			logger.error(setStyle('创建目录错误：', 'red bold') + folder);
+			logger.error(err);
+			result.failed.push(folder);
+		}
+		else {
+			result.success.push(folder);
+		}
+		count --;
+		if (count > 0) return;
+		res(result);
+	});
+});
+// 批量创建空文件
+fs.createEmptyFiles = (files, logger) => new Promise((res, rej) => {
+	logger = logger || console;
+	var count = files.length, result = { success: [], failed: [] };
+	if (count === 0) {
+		setImmediate(() => {
+			res(result);
+		});
+		return;
+	}
+	files.forEach(file => {
+		logger.log(setStyle('创建文件：', 'bold') + file);
+		fs.appendFile(file, '', 'utf8', err => {
+			if (!!err) {
+				logger.error(setStyle('创建文件错误：', 'red bold') + file);
+				logger.error(err);
+				result.failed.push(file);
+			}
+			else {
+				result.success.push(file);
+			}
+			count --;
+			if (count > 0) return;
+			res(result);
+		});
+	});
+});
+// 批量删除文件
+fs.deleteFiles = (files, logger) => new Promise((res, rej) => {
+	logger = logger || console;
+	var count = files.length, result = { success: [], failed: [] };
+	if (count === 0) {
+		setImmediate(() => {
+			res(result);
+		});
+		return;
+	}
+	files.forEach(file => {
+		logger.info(setStyle('删除文件：', 'bold') + file);
+		fs.unlink(file, err => {
+			if (!!err) {
+				logger.error(setStyle('删除文件错误：', 'red bold') + file);
+				logger.error(err);
+				result.failed.push(file);
+			}
+			else {
+				result.success.push(file);
+			}
+			count --;
+			if (count > 0) return;
+			res(result);
+		});
+	});
+});
+// 批量删除文件夹
+var deleteFolders = (files, logger) => new Promise((res, rej) => {
+	logger = logger || console;
+	var count = files.length, result = { success: [], failed: [] };
+	if (count === 0) {
+		setImmediate(() => {
+			res(result);
+		});
+		return;
+	}
+	files.forEach(file => {
+		logger.info(setStyle('删除目录：', 'bold') + file);
+		fs.rmdir(file, err => {
+			if (!!err) {
+				logger.error(setStyle('删除目录错误：', 'red bold') + file);
+				logger.error(err);
+				result.failed.push(file);
+			}
+			else {
+				result.success.push(file);
+			}
+			count --;
+			if (count > 0) return;
+			res(result);
+		});
+	});
+});
+var deleteFoldersForcely = (files, logger) => new Promise((res, rej) => {
+	logger = logger || console;
+	var count = files.length, result = { success: [], failed: [] };
+	if (count === 0) {
+		setImmediate(() => {
+			res(result);
+		});
+		return;
+	}
+	var cb = () => {
+		count --;
+		if (count > 0) return;
+		res(result);
+	};
+	files.forEach(file => {
+		fs.readdir(file, async (err, fls) => {
+			if (!!err) {
+				result.failed.push(file);
+				cb();
+			}
+			else if (fls.length === 0) {
+				let stat = await deleteFolders([file], logger);
+				stat.success.forEach(p => result.success.push(file));
+				stat.failed.forEach(p => result.failed.push(file));
+				cb();
+			}
+			else {
+				fls = fls.map(p => file + Path.sep + p);
+				fls = await fs.filterPath(fls);
+				let task = 2;
+				let job = async () => {
+					task --;
+					if (task > 0) return;
+					let stat = await deleteFolders([file], logger);
+					stat.success.forEach(p => result.success.push(file));
+					stat.failed.forEach(p => result.failed.push(file));
+					cb();
+				};
+				(async () => {
+					var stat = await fs.deleteFiles(fls.files, logger);
+					stat.success.forEach(p => result.success.push(p));
+					stat.failed.forEach(p => result.failed.push(p));
+					job();
+				}) ();
+				(async () => {
+					var stat = await deleteFoldersForcely(fls.folders, logger);
+					stat.success.forEach(p => result.success.push(p));
+					stat.failed.forEach(p => result.failed.push(p));
+					job();
+				}) ();
+			}
+		});
+	});
+});
+fs.deleteFolders = (files, force, logger) => new Promise(async (res, rej) => {
+	var result;
+	if (!!force) result = await deleteFoldersForcely(files, logger);
+	else result = await deleteFolders(files, logger);
+	res(result);
+});

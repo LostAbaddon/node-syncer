@@ -778,18 +778,26 @@ var omniHistory = {
 };
 omniHistory.record = (changed, failed) => {
 	var time = new Date();
-	omniHistory.last.changed = changed;
+	omniHistory.last.changed = [];
 	omniHistory.last.failed = failed;
 	changed.forEach(path => {
 		omniHistory.timeline[path] = time;
-		var index = omniHistory.total.failed.indexOf(path);
+		var index = omniHistory.last.failed.indexOf(path);
+		if (index >= 0) omniHistory.last.failed.splice(index, 1);
+		index = omniHistory.last.changed.indexOf(path);
+		if (index < 0) omniHistory.last.changed.push(path);
+		index = omniHistory.total.failed.indexOf(path);
 		if (index >= 0) omniHistory.total.failed.splice(index, 1);
 		index = omniHistory.total.changed.indexOf(path);
 		if (index < 0) omniHistory.total.changed.push(path);
 	});
 	failed.forEach(path => {
 		omniHistory.timeline[path] = time;
-		var index = omniHistory.total.changed.indexOf(path);
+		var index = omniHistory.last.changed.indexOf(path);
+		if (index >= 0) omniHistory.last.changed.splice(index, 1);
+		index = omniHistory.last.failed.indexOf(path);
+		if (index < 0) omniHistory.last.failed.push(path);
+		index = omniHistory.total.changed.indexOf(path);
 		if (index >= 0) omniHistory.total.changed.splice(index, 1);
 		index = omniHistory.total.failed.indexOf(path);
 		if (index < 0) omniHistory.total.failed.push(path);
@@ -804,80 +812,14 @@ omniHistory.recall = mode => {
 };
 
 // 文件操作
-var filterPath = (paths, cb) => new Promise((res, rej) => {
-	var count = paths.length, nonexist = [], files = [], folders = [], wrong = [];
-	paths.map(path => {
-		fs.stat(path, (err, stat) => {
-			if (!!err || !stat) {
-				nonexist.push(path);
-			}
-			else if (stat.isFile()) {
-				files.push(path);
-			}
-			else if (stat.isDirectory()) {
-				folders.push(path);
-			}
-			else {
-				wrong.push(path);
-			}
-			count --;
-			if (count > 0) return;
-			var result = { nonexist, files, folders, wrong };
-			res(result);
-			if (cb) cb(result);
-		});
-	});
-});
-var createFolders = folders => new Promise((res, rej) => {
-	var count = folders.length, failed = [];
-	if (count === 0) {
-		setImmediate(() => {
-			res(failed);
-		});
-		return;
-	}
-	folders.map(async folder => {
-		logger.info(setStyle('创建目录：', 'bold') + folder);
-		var err = await fs.mkfolder(folder);
-		if (!!err) {
-			logger.error(setStyle('创建目录错误：', 'red bold') + folder);
-			logger.error(err);
-			failed.push(folder);
-		}
-		count --;
-		if (count > 0) return;
-		res(failed);
-	});
-});
-var createEmptyFiles = files => new Promise((res, rej) => {
-	var count = files.length, failed = [];
-	if (count === 0) {
-		setImmediate(() => {
-			res(failed);
-		});
-		return;
-	}
-	files.map(file => {
-		logger.info(setStyle('创建文件：', 'bold') + file);
-		fs.appendFile(file, '', 'utf8', err => {
-			if (!!err) {
-				logger.error(setStyle('创建文件错误：', 'red bold') + file);
-				logger.error(err);
-				failed.push(file);
-			}
-			count --;
-			if (count > 0) return;
-			res(failed);
-		});
-	});
-});
 var createFilesAndFolders = (group, paths, isFolder, cb) => new Promise(async (res, rej) => {
 	handcraftCreating = true;
 
 	var range = group.range, files = [], folders = [];
-	paths.map(f => {
-		f = '/' + f.replace(/^\//, '').trim();
-		range.map(p => {
+	// 获取真实路径
+	paths.forEach(f => {
+		f = '/' + f.replace(/^\/+/, '').trim();
+		range.forEach(p => {
 			var r = Path.normalize(p + f);
 			if (isFolder) {
 				if (folders.indexOf(r) < 0) folders.push(r);
@@ -890,32 +832,98 @@ var createFilesAndFolders = (group, paths, isFolder, cb) => new Promise(async (r
 		});
 	});
 
-	var stats;
+	var stats, result;
 	logger.info(setStyle('开始创建文件', 'green bold'));
-	stats = await filterPath(folders);
-	stats.failed = await createFolders(stats.nonexist);
+	stats = await fs.filterPath(folders); // 检查路径是否存在是否是文件
+	result = await fs.createFolders(stats.nonexist, logger); // 批量创建不存在的路径
+	stats.changed = result.success;
+	stats.failed = result.failed;
 	logger.info(setStyle('目录已创建', 'green bold'));
-	stats.changed = stats.nonexist.filter(path => (stats.failed.indexOf(path) < 0));
 	omniHistory.record(stats.changed, stats.failed);
 	folders = [];
 	stats.folders.forEach(path => folders.push(path));
 	stats.changed.forEach(path => folders.push(path));
 	stats.unavailableFiles = [];
+	// 过滤可以创建的文件路径
 	files = files.filter(path => {
 		var available = folders.some(p => path.indexOf(p) === 0);
 		if (!available) stats.unavailableFiles.push(path);
 		return available;
 	});
-	stats.fileStats = await filterPath(files);
-	stats.fileStats.failed = await createEmptyFiles(stats.fileStats.nonexist);
-	stats.fileStats.changed = stats.fileStats.nonexist.filter(path => (stats.fileStats.failed.indexOf(path) < 0));
+	stats.fileStats = await fs.filterPath(files); // 检查路径是否存在是否是文件
+	result = await fs.createEmptyFiles(stats.fileStats.nonexist, logger); // 批量创建不存在的文件
+	stats.fileStats.changed = result.success;
+	stats.fileStats.failed = result.failed;
 	stats.unavailableFiles.forEach(path => stats.fileStats.failed.push(path));
 	omniHistory.record(stats.fileStats.changed, stats.fileStats.failed);
-	logger.info(setStyle('文件创建完成', 'green bold'));
-	logger.info('    ' + setStyle('共创建' + stats.changed.length + '个目录', 'blue bold'));
-	logger.info('    ' + setStyle('共创建' + stats.fileStats.changed.length + '个文件', 'blue bold'));
-	logger.info('    ' + setStyle('共创建失败' + stats.failed.length + '个目录', 'red bold'));
-	logger.info('    ' + setStyle('共创建失败' + stats.fileStats.failed.length + '个文件', 'red bold'));
+	logger.log(setStyle('文件创建完成', 'green bold'));
+	if (stats.changed.length > 0) logger.log('    ' + setStyle('共创建' + stats.changed.length + '个目录', 'blue bold'));
+	if (stats.fileStats.changed.length > 0) logger.log('    ' + setStyle('共创建' + stats.fileStats.changed.length + '个文件', 'blue bold'));
+	if (stats.failed.length > 0) logger.log('    ' + setStyle('共创建失败' + stats.failed.length + '个目录', 'red bold'));
+	if (stats.fileStats.failed.length > 0) logger.log('    ' + setStyle('共创建失败' + stats.fileStats.failed.length + '个文件', 'red bold'));
+
+	handcraftCreating = false;
+
+	res();
+	if (cb) cb();
+});
+var deleteFilesAndFolders = (group, paths, force, cb) => new Promise(async (res, rej) => {
+	handcraftCreating = true;
+	// create Codes/a.txt Codes/b cxx/aaa cxx/zzz cxx/www -g work
+	// del Codes/a.txt Codes/b cxx -f -g work
+
+	var range = group.range, files = [], stat;
+	// 获取真实路径
+	paths.forEach(f => {
+		f = '/' + f.replace(/^\/+/, '').trim();
+		range.forEach(p => {
+			files.push(Path.normalize(p + f));
+		});
+	});
+	stat = await fs.filterPath(files); // 拆分出文件和目录
+	paths = [];
+	stat.files.forEach(f => paths.push(f));
+	stat.folders.forEach(f => paths.push(f));
+
+	// 找出所有组中被同步到的所有文件与文件夹
+	var changed = true;
+	while (changed) {
+		changed = false;
+		for (let g in syncGroups) {
+			g = syncGroups[g].map.source;
+			let target;
+			let found = g.some(path => paths.some(p => {
+				var same = p.indexOf(path) === 0;
+				target = p.substring(path.length, p.length);
+				return same;
+			}));
+			if (!found) continue;
+			g.forEach(p => {
+				p = p + target;
+				if (paths.indexOf(p) < 0) {
+					changed = true;
+					paths.push(p);
+				}
+			});
+		}
+	}
+
+	var changed = [], failed = [];
+	// 筛选出文件与文件夹
+	stat = await fs.filterPath(paths);
+	// 删除所有文件
+	files = await fs.deleteFiles(stat.files, logger);
+	files.success.forEach(p => changed.push(p));
+	files.failed.forEach(p => failed.push(p));
+	// 删除所有文件夹
+	files = await fs.deleteFolders(stat.folders, force, logger);
+	files.success.forEach(p => changed.push(p));
+	files.failed.forEach(p => failed.push(p));
+
+	omniHistory.record(changed, failed);
+	logger.log(setStyle('文件与目录删除完成', 'green bold'));
+	if (changed.length > 0) logger.log('    ' + setStyle('共删除' + changed.length + '个文件与目录', 'blue bold'));
+	if (failed.length > 0) logger.log('    ' + setStyle('共删除失败' + failed.length + '个文件与目录', 'red bold'));
 
 	handcraftCreating = false;
 
@@ -951,6 +959,13 @@ var launchSync = groups => new Promise((res, rej) => {
 		if (changeCount > 0) return;
 		res([changeGroup, failGroup, changeList, failList]);
 	});
+});
+var revokeMission = (notFirstLaunch, cb) => new Promise(async (res, rej) => {
+	razeAllWatchers();
+	if (!!deamonWatch) clearTimeout(deamonWatch);
+	await launchMission(notFirstLaunch);
+	res();
+	if (cb) cb();
 });
 var launchMission = async notFirstLaunch => {
 	var log, message = [''];
@@ -1164,7 +1179,7 @@ var cmdLauncher = clp({
 			}
 		}
 
-		launchMission();
+		launchMission(true);
 	});
 
 	launchMission();
@@ -1208,6 +1223,7 @@ var rtmLauncher = clp({
 .addOption('--files -f <path> >> 查看指定路径下的文件列表')
 .addOption('--all -a >> 显示所有文件与文件夹，不打开则只显示有变化的文件与文件夹')
 .add('delete|del [...files] >> 删除文件列表')
+.addOption('--force -f >> 强制删除整个目录')
 .addOption('--group -g <group> >> 指定分组')
 .add('create|new [...files] >> 创建文件列表')
 .addOption('--group -g <group> >> 指定分组')
@@ -1255,9 +1271,7 @@ var rtmLauncher = clp({
 	}, 200);
 })
 .on('refresh', (params, all, command) => {
-	razeAllWatchers();
-	if (!!deamonWatch) clearTimeout(deamonWatch);
-	launchMission();
+	revokeMission();
 })
 .on('list', (params, all, command) => {
 	var groupList = Object.keys(syncGroups);
@@ -1460,15 +1474,17 @@ var rtmLauncher = clp({
 	message.push(setStyle(title, 'bold underline'));
 	message.push('    ' + setStyle('同步成功文件：', 'green bold'));
 	history.changed.map(path => {
-		var line = path[0].len + 2, len = 120;
-		if (len < line) len = Math.ceil(line / 40) * 40;
-		message.push('        ' + path[0] + String.blank(len) + '（' + path[1] + '）');
+		var line = path[0].length + 2, len = 120;
+		if (len < line) len = Math.ceil(line / 20) * 20;
+		line = path[0].length;
+		message.push('        ' + path[0] + String.blank(len - line) + '（' + timeNormalize(path[1]) + '）');
 	});
 	message.push('    ' + setStyle('同步失败文件：', 'red bold'));
 	history.failed.map(path => {
-		var line = path[0].len + 2, len = 120;
-		if (len < line) len = Math.ceil(line / 40) * 40;
-		message.push('        ' + path[0] + String.blank(len) + '（' + path[1] + '）');
+		var line = path[0].length + 2, len = 120;
+		if (len < line) len = Math.ceil(line / 20) * 20;
+		line = path[0].length;
+		message.push('        ' + path[0] + String.blank(len - line) + '（' + timeNormalize(path[1]) + '）');
 	});
 	logger.log(message.join('\n'));
 })
@@ -1503,11 +1519,9 @@ var rtmLauncher = clp({
 
 	await createFilesAndFolders(group, paths, !!params.folder);
 
-	razeAllWatchers();
-	if (!!deamonWatch) clearTimeout(deamonWatch);
-	launchMission();
+	await revokeMission(true);
 })
-.on('delete', (params, all, command) => {
+.on('delete', async (params, all, command) => {
 	var group = params.group;
 	if (!group) {
 		command.showError('所属分组参数不能为空！');
@@ -1530,18 +1544,16 @@ var rtmLauncher = clp({
 		command.showError('不可在文件同步组里删除文件/目录！');
 		return;
 	}
-	var files = params.files;
-	if (!files || files.length === 0) {
+	var paths = params.files;
+	if (!paths || paths.length === 0) {
 		command.showError('不可没有目标路径！');
 		return;
 	}
-	handcraftCreating = true;
+	var force = !!params.force;
+	
+	await deleteFilesAndFolders(group, paths, force);
 
-	handcraftCreating = false;
-
-	razeAllWatchers();
-	if (!!deamonWatch) clearTimeout(deamonWatch);
-	launchMission();
+	await revokeMission(true);
 })
 .on('copy', (params, all, command) => {
 	var source = params.source, target = params.target;
