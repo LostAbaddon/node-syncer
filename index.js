@@ -639,73 +639,6 @@ var readJSON = file => new Promise((res, rej) => {
 		res(content);
 	});
 });
-var createFolders = folders => new Promise((res, rej) => {
-	var count = folders.length, failed = [];
-	if (count === 0) {
-		setImmediate(() => {
-			res(failed);
-		});
-		return;
-	}
-	folders.map(async folder => {
-		logger.info(setStyle('创建目录：', 'bold') + folder);
-		var err = await fs.mkfolder(folder);
-		if (!!err) {
-			logger.error(setStyle('创建目录错误：', 'red bold') + folder);
-			logger.error(err);
-			failed.push(folder);
-		}
-		count --;
-		if (count > 0) return;
-		res(failed);
-	});
-});
-var createEmptyFiles = files => new Promise((res, rej) => {
-	var count = files.length, failed = [];
-	if (count === 0) {
-		setImmediate(() => {
-			res(failed);
-		});
-		return;
-	}
-	files.map(file => {
-		logger.info(setStyle('创建文件：', 'bold') + file);
-		fs.appendFile(file, '', 'utf8', err => {
-			if (!!err) {
-				logger.error(setStyle('创建文件错误：', 'red bold') + file);
-				logger.error(err);
-				failed.push(file);
-			}
-			count --;
-			if (count > 0) return;
-			res(failed);
-		});
-	});
-});
-var filterPath = (paths, cb) => new Promise((res, rej) => {
-	var count = paths.length, nonexist = [], files = [], folders = [], wrong = [];
-	paths.map(path => {
-		fs.stat(path, (err, stat) => {
-			if (!!err || !stat) {
-				nonexist.push(path);
-			}
-			else if (stat.isFile()) {
-				files.push(path);
-			}
-			else if (stat.isDirectory()) {
-				folders.push(path);
-			}
-			else {
-				wrong.push(path);
-			}
-			count --;
-			if (count > 0) return;
-			var result = { nonexist, files, folders, wrong };
-			res(result);
-			if (cb) cb(result);
-		});
-	});
-});
 const RegMonoWidthChars = /[\x00-\xff–]+/g;
 var getCLLength = text => {
 	var len = text.length;
@@ -840,24 +773,155 @@ var watchTrees = groups => {
 // 历史相关
 var omniHistory = {
 	last: { changed: [], failed: [] },
-	total: { changed: [], failed: [] }
+	total: { changed: [], failed: [] },
+	timeline: {}
 };
 omniHistory.record = (changed, failed) => {
+	var time = new Date();
 	omniHistory.last.changed = changed;
 	omniHistory.last.failed = failed;
-	changed.map(path => {
+	changed.forEach(path => {
+		omniHistory.timeline[path] = time;
 		var index = omniHistory.total.failed.indexOf(path);
 		if (index >= 0) omniHistory.total.failed.splice(index, 1);
 		index = omniHistory.total.changed.indexOf(path);
 		if (index < 0) omniHistory.total.changed.push(path);
 	});
-	failed.map(path => {
+	failed.forEach(path => {
+		omniHistory.timeline[path] = time;
 		var index = omniHistory.total.changed.indexOf(path);
 		if (index >= 0) omniHistory.total.changed.splice(index, 1);
 		index = omniHistory.total.failed.indexOf(path);
 		if (index < 0) omniHistory.total.failed.push(path);
 	});
 };
+omniHistory.recall = mode => {
+	var changed = [], failed = [];
+	var list = !!mode ? omniHistory.total : omniHistory.last;
+	list.changed.forEach(path => changed.push([path, omniHistory.timeline[path]]));
+	list.failed.forEach(path => failed.push([path, omniHistory.timeline[path]]));
+	return { changed, failed };
+};
+
+// 文件操作
+var filterPath = (paths, cb) => new Promise((res, rej) => {
+	var count = paths.length, nonexist = [], files = [], folders = [], wrong = [];
+	paths.map(path => {
+		fs.stat(path, (err, stat) => {
+			if (!!err || !stat) {
+				nonexist.push(path);
+			}
+			else if (stat.isFile()) {
+				files.push(path);
+			}
+			else if (stat.isDirectory()) {
+				folders.push(path);
+			}
+			else {
+				wrong.push(path);
+			}
+			count --;
+			if (count > 0) return;
+			var result = { nonexist, files, folders, wrong };
+			res(result);
+			if (cb) cb(result);
+		});
+	});
+});
+var createFolders = folders => new Promise((res, rej) => {
+	var count = folders.length, failed = [];
+	if (count === 0) {
+		setImmediate(() => {
+			res(failed);
+		});
+		return;
+	}
+	folders.map(async folder => {
+		logger.info(setStyle('创建目录：', 'bold') + folder);
+		var err = await fs.mkfolder(folder);
+		if (!!err) {
+			logger.error(setStyle('创建目录错误：', 'red bold') + folder);
+			logger.error(err);
+			failed.push(folder);
+		}
+		count --;
+		if (count > 0) return;
+		res(failed);
+	});
+});
+var createEmptyFiles = files => new Promise((res, rej) => {
+	var count = files.length, failed = [];
+	if (count === 0) {
+		setImmediate(() => {
+			res(failed);
+		});
+		return;
+	}
+	files.map(file => {
+		logger.info(setStyle('创建文件：', 'bold') + file);
+		fs.appendFile(file, '', 'utf8', err => {
+			if (!!err) {
+				logger.error(setStyle('创建文件错误：', 'red bold') + file);
+				logger.error(err);
+				failed.push(file);
+			}
+			count --;
+			if (count > 0) return;
+			res(failed);
+		});
+	});
+});
+var createFilesAndFolders = (group, paths, isFolder, cb) => new Promise(async (res, rej) => {
+	handcraftCreating = true;
+
+	var range = group.range, files = [], folders = [];
+	paths.map(f => {
+		f = '/' + f.replace(/^\//, '').trim();
+		range.map(p => {
+			var r = Path.normalize(p + f);
+			if (isFolder) {
+				if (folders.indexOf(r) < 0) folders.push(r);
+			}
+			else {
+				let q = Path.dirname(r);
+				if (folders.indexOf(q) < 0) folders.push(q);
+				if (files.indexOf(r) < 0) files.push(r);
+			}
+		});
+	});
+
+	var stats;
+	logger.info(setStyle('开始创建文件', 'green bold'));
+	stats = await filterPath(folders);
+	stats.failed = await createFolders(stats.nonexist);
+	logger.info(setStyle('目录已创建', 'green bold'));
+	stats.changed = stats.nonexist.filter(path => (stats.failed.indexOf(path) < 0));
+	omniHistory.record(stats.changed, stats.failed);
+	folders = [];
+	stats.folders.forEach(path => folders.push(path));
+	stats.changed.forEach(path => folders.push(path));
+	stats.unavailableFiles = [];
+	files = files.filter(path => {
+		var available = folders.some(p => path.indexOf(p) === 0);
+		if (!available) stats.unavailableFiles.push(path);
+		return available;
+	});
+	stats.fileStats = await filterPath(files);
+	stats.fileStats.failed = await createEmptyFiles(stats.fileStats.nonexist);
+	stats.fileStats.changed = stats.fileStats.nonexist.filter(path => (stats.fileStats.failed.indexOf(path) < 0));
+	stats.unavailableFiles.forEach(path => stats.fileStats.failed.push(path));
+	omniHistory.record(stats.fileStats.changed, stats.fileStats.failed);
+	logger.info(setStyle('文件创建完成', 'green bold'));
+	logger.info('    ' + setStyle('共创建' + stats.changed.length + '个目录', 'blue bold'));
+	logger.info('    ' + setStyle('共创建' + stats.fileStats.changed.length + '个文件', 'blue bold'));
+	logger.info('    ' + setStyle('共创建失败' + stats.failed.length + '个目录', 'red bold'));
+	logger.info('    ' + setStyle('共创建失败' + stats.fileStats.failed.length + '个文件', 'red bold'));
+
+	handcraftCreating = false;
+
+	res();
+	if (cb) cb();
+});
 
 // 主业务
 var initialGroups = list => new Promise((resolve, reject) => {
@@ -1384,23 +1448,27 @@ var rtmLauncher = clp({
 	logger.log(message.join('\n'));
 })
 .on('history', (param, all, command) => {
-	var history, title, message = [];
+	var history, title, message = [];;
 	if (!!param.all) {
 		title = '所有修改历史：';
-		history = omniHistory.total;
+		history = omniHistory.recall(true);
 	}
 	else {
 		title = '上次修改记录：';
-		history = omniHistory.last;
+		history = omniHistory.recall(false);
 	}
 	message.push(setStyle(title, 'bold underline'));
 	message.push('    ' + setStyle('同步成功文件：', 'green bold'));
 	history.changed.map(path => {
-		message.push('        ' + path);
+		var line = path[0].len + 2, len = 120;
+		if (len < line) len = Math.ceil(line / 40) * 40;
+		message.push('        ' + path[0] + String.blank(len) + '（' + path[1] + '）');
 	});
 	message.push('    ' + setStyle('同步失败文件：', 'red bold'));
 	history.failed.map(path => {
-		message.push('        ' + path);
+		var line = path[0].len + 2, len = 120;
+		if (len < line) len = Math.ceil(line / 40) * 40;
+		message.push('        ' + path[0] + String.blank(len) + '（' + path[1] + '）');
 	});
 	logger.log(message.join('\n'));
 })
@@ -1432,53 +1500,8 @@ var rtmLauncher = clp({
 		command.showError('不可没有目标路径！');
 		return;
 	}
-	var isFolder = !!params.folder, range = group.range;
-	handcraftCreating = true;
 
-	var files = [], folders = [];
-	paths.map(f => {
-		f = '/' + f.replace(/^\//, '').trim();
-		range.map(p => {
-			var r = Path.normalize(p + f);
-			if (isFolder) {
-				if (folders.indexOf(r) < 0) folders.push(r);
-			}
-			else {
-				let q = Path.dirname(r);
-				if (folders.indexOf(q) < 0) folders.push(q);
-				if (files.indexOf(r) < 0) files.push(r);
-			}
-		});
-	});
-
-	var stats;
-	logger.info(setStyle('开始创建文件', 'green bold'));
-	stats = await filterPath(folders);
-	stats.failed = await createFolders(stats.nonexist);
-	logger.info(setStyle('目录已创建', 'green bold'));
-	stats.changed = stats.nonexist.filter(path => (stats.failed.indexOf(path) < 0));
-	omniHistory.record(stats.changed, stats.failed);
-	folders = [];
-	stats.folders.forEach(path => folders.push(path));
-	stats.changed.forEach(path => folders.push(path));
-	stats.unavailableFiles = [];
-	files = files.filter(path => {
-		var available = folders.some(p => path.indexOf(p) === 0);
-		if (!available) stats.unavailableFiles.push(path);
-		return available;
-	});
-	stats.fileStats = await filterPath(files);
-	stats.fileStats.failed = await createEmptyFiles(stats.fileStats.nonexist);
-	stats.fileStats.changed = stats.fileStats.nonexist.filter(path => (stats.fileStats.failed.indexOf(path) < 0));
-	stats.unavailableFiles.forEach(path => stats.fileStats.failed.push(path));
-	omniHistory.record(stats.fileStats.changed, stats.fileStats.failed);
-	logger.info(setStyle('文件创建完成', 'green bold'));
-	logger.info('    ' + setStyle('共创建' + stats.changed.length + '个目录', 'blue bold'));
-	logger.info('    ' + setStyle('共创建' + stats.fileStats.changed.length + '个文件', 'blue bold'));
-	logger.info('    ' + setStyle('共创建失败' + stats.failed.length + '个目录', 'red bold'));
-	logger.info('    ' + setStyle('共创建失败' + stats.fileStats.failed.length + '个文件', 'red bold'));
-
-	handcraftCreating = false;
+	await createFilesAndFolders(group, paths, !!params.folder);
 
 	razeAllWatchers();
 	if (!!deamonWatch) clearTimeout(deamonWatch);
