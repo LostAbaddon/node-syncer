@@ -14,7 +14,7 @@ const createCB = (host, callback) => function (...args) {
 	var params = args.copy();
 	params.push(pack.event)
 	var finished = callback.call(host, ...params);
-	pack.finished = pack.finished || finished;
+	pack.finished = finished;
 	return pack.finished;
 };
 const createEmitter = (host, eventName) => {
@@ -23,13 +23,21 @@ const createEmitter = (host, eventName) => {
 	cap = cap.toUpperCase();
 	var fullEventName = 'on' + cap + left;
 	host[fullEventName] = host[fullEventName] || ((...args) => host.emit(eventName, ...args));
-}
+	if (host.host) host.host[fullEventName] = host.host[fullEventName] || ((...args) => {
+		host.emit(eventName, ...args);
+		return host.host;
+	});
+};
 const createHooker = (host, eventName) => {
 	var left = eventName.substring(1, eventName.length);
 	var cap = eventName.substring(0, 1);
 	cap = cap.toUpperCase();
 	var fullEventName = 'look' + cap + left;
 	host[fullEventName] = host[fullEventName] || ((...args) => host.on(eventName, ...args));
+	if (!!host.host) host.host[fullEventName] = host.host[fullEventName] || ((...args) => {
+		host.on(eventName, ...args);
+		return host.host;
+	});
 };
 
 class EventData {
@@ -41,21 +49,34 @@ class EventData {
 	}
 }
 class EventManager {
-	constructor (events) {
-		this._ee = new EventEmitter();
-		this._events = {};
+	constructor (host, events) {
+		if (!events && host instanceof Array) {
+			events = host;
+			host = null;
+		}
+		var self = this;
+		var _ee = new EventEmitter();
+		var _events = {};
+		Object.defineProperty(this, '_ee', { configurable: false, value: _ee });
+		Object.defineProperty(this, '_events', { configurable: false, value: _events });
+
+		if (!!host) {
+			Object.defineProperty(this, 'host', { configurable: false, value: host });
+			if (!host.heart) Object.defineProperty(host, 'heart', { configurable: false, value: self });
+			host.on = host.on || function (...args) { self.on.apply(self, args); return host; };
+			host.once = host.once || function (...args) { self.once.apply(self, args); return host; };
+			host.off = host.off || function (...args) { self.off.apply(self, args); return host; };
+			host.clear = host.clear || function (...args) { self.clear.apply(self, args); return host; };
+			host.emit = host.emit || function (...args) { self.emit.apply(self, args); return host; };
+			if (!host.events) Object.defineProperty(host, 'events', { value: self.events });
+		}
+
 		(events || []).map(e => {
 			createHooker(this, e);
 			createEmitter(this, e);
 		});
-		Object.defineProperty(this, '_ee', { enumerable: false });
-		Object.defineProperty(this, '_events', { enumerable: false });
-		Object.defineProperty(this, 'events', {
-			enumerable: true,
-			value: () => Object.keys(this._ee._events)
-		});
 	}
-	get eventsx () {
+	get events () {
 		return Object.keys(this._ee._events);
 	}
 	on (eventName, callback) {
@@ -82,11 +103,14 @@ class EventManager {
 	}
 	clear (eventName) {
 		this._events[eventName] = new WeakMap();
-		(this._ee._events[eventName] || []).map(cb => this._ee.removeListener(cb));
+		var list = (this._ee._events[eventName] || []).copy();
+		list.map(cb => {
+			this._ee.removeListener(eventName, cb);
+		});
 		return this;
 	}
 	emit (eventName, ...args) {
-		var event = new EventManager.EventData(eventName, this);
+		var event = new EventManager.EventData(eventName, this.host || this);
 		var eventPack = {
 			event: event,
 			finished: false
