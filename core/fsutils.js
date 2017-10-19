@@ -144,6 +144,14 @@ var mkLoop = () => {
 // 批量获取路径状态：不存在、文件、目录、其它
 fs.filterPath = (paths, cb) => new Promise((res, rej) => {
 	var count = paths.length, nonexist = [], files = [], folders = [], wrong = [];
+	if (count === 0) {
+		let result = { nonexist, files, folders, wrong };
+		setImmediate(() => {
+			res(result);
+			if (cb) cb(result);
+		});
+		return;
+	}
 	paths.forEach(path => {
 		fs.stat(path, (err, stat) => {
 			if (!!err || !stat) {

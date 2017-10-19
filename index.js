@@ -771,8 +771,7 @@ var razeAllWatchers = () => {
 	if (!!watcherTrigger) clearTimeout(watcherTrigger);
 	for (let watch in fileWatchers) {
 		let w = fileWatchers[watch];
-		if (!w) continue;
-		w.close();
+		if (!!w) w.close();
 		fileWatchers[watch] = null;
 	}
 };
@@ -791,7 +790,7 @@ var watchTrees = groups => {
 				}
 				catch (err) {
 					logger.error(err.message);
-					console.log(err);
+					console.error(err);
 				}
 				if (!!watch) fileWatchers[path] = watch;
 			});
@@ -812,7 +811,7 @@ var watchTrees = groups => {
 				}
 				catch (err) {
 					logger.error(err.message);
-					console.log(err);
+					console.error(err);
 				}
 				if (!!watch) fileWatchers[url] = watch;
 			});
@@ -966,7 +965,7 @@ var deleteFilesAndFolders = (group, paths, force, cb) => new Promise(async (res,
 			g.forEach(path => paths.forEach(p => {
 				if (p.indexOf(path) === 0) {
 					var target = p.substring(path.length, p.length); // 截取组中相对路径
-					if (trees[gname].indexOf(target) < 0) return; // 判断是否是组中已有元素，因为可能被ignore了
+					if (trees[gname].indexOf(target) < 0 && trees[gname].indexOf(target + '/') < 0) return; // 判断是否是组中已有元素，因为可能被ignore了
 					g.forEach(q => {
 						q = q + target;
 						if (paths.indexOf(q) < 0) {

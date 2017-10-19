@@ -3,7 +3,7 @@
  * Desc:    优化的事件管理器
  * Author:	LostAbaddon
  * Version:	0.0.1
- * Date:	2017.08.24
+ * Date:	2017.10.18
  */
 
 const EventEmitter = require('events');
