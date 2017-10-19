@@ -583,12 +583,6 @@ var scanGroup = (group, cb) => {
 };
 
 // 同步相关
-var getFileNameInShell = filename => filename
-	.replace(/ /g, '\\ ')
-	.replace(/'/g, "\\'")
-	.replace(/\(/g, "\\(")
-	.replace(/\)/g, "\\)")
-	.replace(/\&/g, "\\&");
 var prepareFolder = (target, cb) => new Promise(async (res, rej) => {
 	var err = await fs.mkfolder(target);
 	changePrompt(syncConfig.syncPrompt);
@@ -645,19 +639,6 @@ var duplicateFile = (source, target, cb) => new Promise((res, rej) => {
 			return;
 		}
 		cbb();
-	});
-});
-var duplicateFileOld = (source, target, cb) => new Promise(async (res, rej) => {
-	source = getFileNameInShell(source);
-	target = getFileNameInShell(target);
-	var cmd = 'cp -a ' + source + ' ' + target;
-	exec(cmd, (err, stdout, stderr) => {
-		changePrompt(syncConfig.syncPrompt);
-		if (!!err) logger.log(setStyle(setStyle('同步文件失败：', 'bold') + target, 'red'));
-		else logger.log(setStyle('同步文件：', 'bold') + target);
-		changePrompt();
-		res(err);
-		if (cb) cb(err);
 	});
 });
 var combileList = (list, changed, failed) => {
@@ -985,8 +966,6 @@ var deleteFilesAndFolders = (group, paths, force, cb) => new Promise(async (res,
 	if (cb) cb();
 });
 var copyFilesFromOutside = (source, target, group, force, cb) => new Promise(async (res, rej) => {
-	// copy ~/Documents/works/ryx_pis/pom.xml test.txt -g work
-	// del test.txt -g work
 	handcraftCreating = true;
 
 	var range = group.range, files = [];

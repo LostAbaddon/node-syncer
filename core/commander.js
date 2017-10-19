@@ -44,13 +44,11 @@ const cli = require('./cli');
 const isDate = v => v.match(/^\d{2,4}-\d{1,2}-\d{1,2}(\/\d{1,2}:\d{1,2}(:\d{1,2}(\.\d+)?)?)?$/);
 const toRegExp = reg => new RegExp(reg);
 
-// 参数分隔，必须使用空格的时候，用“\ ”或者“[-space-]”代替
+// 参数分隔，必须使用空格的时候，用“\ ”或者“[:space:]”代替
 const paramsSep = params => {
 	if (!params) return [];
 	if (params.trim().length === 0) return [];
-	params = params.replace(/\\ /gi, '[:space:]');
 	params = params.split(/ +/);
-	params = params.map(p => p.replace(/\[:space:\]/gi, ' '));
 	return params;
 }
 
@@ -136,6 +134,8 @@ const param2String = p => {
 	q = '{' + q + '}';
 	return q;
 };
+const encodeEscape = line => line.replace(/\\ /g, '[:SPACE:]');
+const decodeEscape = line => line.replace(/\[:SPACE:\]/g, ' ');
 
 // 格式：<mparam>( <mparam>)*( [oparam])*( [...optionlist])?
 class Params {
@@ -234,7 +234,7 @@ class Params {
 			if (!!range && !(value + '').match(range)) {
 				throw new Error("参数 " + key + " 的值 " + value + " 不符合取值范围 " + range + " !");
 			}
-			result[key] = value;
+			result[key] = decodeEscape(value);
 			index ++;
 		}
 		// 处理选填参数
@@ -249,7 +249,7 @@ class Params {
 				if (!!r && !(v + '').match(r)) {
 					throw new Error("参数 " + n + " 的值 " + v + " 不符合取值范围 " + r + " !");
 				}
-				result[n] = v;
+				result[n] = decodeEscape(v);
 			}
 			index ++;
 		}
@@ -264,7 +264,7 @@ class Params {
 					if (!!range && !(v + '').match(range)) {
 						throw new Error("缺省参数组 " + this.optionlist + " 的值 " + v + " 不符合取值范围 " + range + " !");
 					}
-					list.push(v);
+					list.push(decodeEscape(v));
 				}
 				if (list.length > 0) result[this.optionlist] = list;
 			}
@@ -543,6 +543,10 @@ class Command {
 		}
 	}
 	parse (command) {
+		console.log(command);
+		command = encodeEscape(command); // 特殊字符转义
+		console.log(command);
+
 		if (command.substring(0, 9) !== '[global] ') command = '[global] ' + command;
 		var sepcmd = Object.keys(this.quests);
 		var cmds = [];
