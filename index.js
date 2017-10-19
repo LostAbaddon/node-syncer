@@ -22,6 +22,7 @@ require('./core/extend');
 require('./core/datetime');
 require('./core/logger');
 require('./core/fsutils');
+require('./core/events/pipe');
 
 const clp = require('./core/commandline/commander');
 const getHealth = require('./core/health');
