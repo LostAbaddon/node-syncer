@@ -37,8 +37,8 @@
 
 const EventEmitter = require('events');
 
-require('./extend');
-const setStyle = require('./setConsoleStyle');
+require('../extend');
+const setStyle = require('../setConsoleStyle');
 const cli = require('./cli');
 
 const isDate = v => v.match(/^\d{2,4}-\d{1,2}-\d{1,2}(\/\d{1,2}:\d{1,2}(:\d{1,2}(\.\d+)?)?)?$/);

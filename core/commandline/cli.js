@@ -10,7 +10,7 @@ const RegRawStyle = /[\u001b].*?m/g;
 
 const ReadLine = require('readline');
 
-const setStyle = require('./setConsoleStyle');
+const setStyle = require('../setConsoleStyle');
 const DefaultHistorySize = 30;
 const DefaultHints = {
 	hint: '> ',

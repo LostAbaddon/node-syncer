@@ -20,7 +20,7 @@ require('./core/datetime');
 require('./core/logger');
 require('./core/fsutils');
 
-const clp = require('./core/commander');
+const clp = require('./core/commandline/commander');
 const getHealth = require('./core/health');
 const setStyle = require('./core/setConsoleStyle');
 const timeNormalize = global.Utils.getTimeString;
@@ -28,6 +28,7 @@ const loglev = (process.env.NODE_ENV === 'production' || process.env.NODE_ENV ==
 const logger = global.logger(loglev);
 const configPath = process.cwd() + '/config.json';
 const deamonDuration = 60;
+const deamonDelay = 1;
 
 // 系统级错误处理
 process.on('unhandledRejection', (reason, p) => {
@@ -46,6 +47,7 @@ var syncConfig = {
 	ignore: false,
 	deaf: false,
 	deamon: false,
+	delay: 1,
 	silence: true,
 	duration: null,
 	web: false,
@@ -612,7 +614,7 @@ var duplicateFile = (source, target, cb) => new Promise((res, rej) => {
 				if (cb) cb(result);
 			}
 			else {
-				
+
 			}
 			res();
 			if (cb) cb();
@@ -759,7 +761,7 @@ var treeWatcher = (path, isFile) => (stat, file) => {
 		logger.log(setStyle('发现文件改动', 'blue bold') + '（' + timeNormalize() + '）：' + path + (!!isFile ? '' : file));
 		changePrompt();
 		launchMission(true);
-	}, 1000);
+	}, syncConfig.delay * 1000);
 };
 var razeAllWatchers = () => {
 	if (!!watcherTrigger) clearTimeout(watcherTrigger);
@@ -932,6 +934,7 @@ var deleteFilesAndFolders = (group, paths, force, cb) => new Promise(async (res,
 	}
 	stat = await fs.filterPath(files); // 拆分出文件和目录
 	if (stat.files.length + stat.folders.length === 0) {
+		logger.log(setStyle('无文件或目录需要删除', 'green bold'));
 		await waitTick();
 		handcraftCreating = false;
 		res();
@@ -944,24 +947,31 @@ var deleteFilesAndFolders = (group, paths, force, cb) => new Promise(async (res,
 
 	// 找出所有组中被同步到的所有文件与文件夹
 	var changed = true;
+	var trees = {};
+	for (let g in syncGroups) {
+		if (syncGroups[g].mode !== WatchMode.FOLDER) continue;
+		let tree = syncGroups[g].tree;
+		trees[g] = tree.map(t => t[0]);
+	}
 	while (changed) {
 		changed = false;
-		for (let g in syncGroups) {
-			g = syncGroups[g].map.source;
-			let target;
-			let found = g.some(path => paths.some(p => {
-				var same = p.indexOf(path) === 0;
-				target = p.substring(path.length, p.length);
-				return same;
-			}));
-			if (!found) continue;
-			g.forEach(p => {
-				p = p + target;
-				if (paths.indexOf(p) < 0) {
-					changed = true;
-					paths.push(p);
+		for (let gname in syncGroups) {
+			let g = syncGroups[gname];
+			if (g.mode !== WatchMode.FOLDER) continue;
+			g = g.map.source;
+			g.forEach(path => paths.forEach(p => {
+				if (p.indexOf(path) === 0) {
+					var target = p.substring(path.length, p.length); // 截取组中相对路径
+					if (trees[gname].indexOf(target) < 0) return; // 判断是否是组中已有元素，因为可能被ignore了
+					g.forEach(q => {
+						q = q + target;
+						if (paths.indexOf(q) < 0) {
+							changed = true;
+							paths.push(q);
+						}
+					});
 				}
-			});
+			}));
 		}
 	}
 
@@ -1199,6 +1209,7 @@ var cmdLauncher = clp({
 		syncConfig.silence = false;
 	}
 	if (!isNaN(params.duration)) syncConfig.duration = params.duration * 60;
+	if (!isNaN(params.delay)) syncConfig.delay = params.delay;
 	if (!!params.silence) syncConfig.silence = true;
 	if (!!params.web) {
 		syncConfig.web = params.web;
@@ -1224,6 +1235,7 @@ var cmdLauncher = clp({
 
 	syncConfig.deamon = syncConfig.deamon || config.deamonMode || false;
 	syncConfig.duration = syncConfig.duration || config.monitor || deamonDuration;
+	syncConfig.delay = syncConfig.delay || config.delay || deamonDelay;
 	syncConfig.silence = syncConfig.silence || config.silence || !syncConfig.deamon;
 	syncConfig.deaf = syncConfig.deaf || config.deaf || false;
 	syncConfig.web = syncConfig.web || config.web || false;
@@ -1551,7 +1563,9 @@ var rtmLauncher = clp({
 	message.push('    ' + setStyle(title, 'bold') + String.blank(padding - getCLLength(title)) + (syncConfig.deaf ? setStyle('开启', 'green') : '关闭'));
 	title = '巡视间隔：';
 	message.push('    ' + setStyle(title, 'bold') + String.blank(padding - getCLLength(title)) + syncConfig.duration + '秒');
-	title = '新增漠视模式：';
+	title = '巡视延迟：';
+	message.push('    ' + setStyle(title, 'bold') + String.blank(padding - getCLLength(title)) + syncConfig.delay + '秒');
+	title = '漠视模式：';
 	message.push('    ' + setStyle(title, 'bold') + String.blank(padding - getCLLength(title)) + (syncConfig.ignore ? setStyle('开启', 'green') : '关闭'));
 	title = '网络值守模式：';
 	message.push('    ' + setStyle(title, 'bold') + String.blank(padding - getCLLength(title)) + (syncConfig.web ? setStyle('开启', 'green') : '关闭'));
