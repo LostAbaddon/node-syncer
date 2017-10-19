@@ -391,11 +391,10 @@ class Group {
 		this.map = new Folder('/');
 
 		var cbReady = null;
-		this.onReady = cb => {
+		this.onReady = async cb => {
 			if (this.mode !== WatchMode.NOTREADY) {
-				setImmediate(() => {
-					cb(this.mode);
-				});
+				await waitTick();
+				cb(this.mode);
 			}
 			else {
 				cbReady = cb;
@@ -599,7 +598,56 @@ var prepareFolder = (target, cb) => new Promise(async (res, rej) => {
 	res(err);
 	if (cb) cb(err);
 });
-var duplicateFile = (source, target, cb) => new Promise(async (res, rej) => {
+var duplicateFile = (source, target, cb) => new Promise((res, rej) => {
+	var task = 2;
+	var cbb = () => {
+		task --;
+		if (task > 0) return;
+		fs.copyFile(source, target, err => {
+			if (!!err) {
+				let result = {};
+				result.message = setStyle(setStyle('复制文件错误：', 'bold') + target, 'red');
+				result.err = err;
+				res(result);
+				if (cb) cb(result);
+			}
+			res();
+			if (cb) cb();
+		});
+	};
+	fs.stat(source, (err, stat) => {
+		if (!!err || !stat) {
+			let result = {};
+			result.message = setStyle(setStyle('源文件错误：', 'bold') + source, 'red');
+			result.err = err;
+			res(result);
+			if (cb) cb(result);
+		}
+		else cbb();
+	});
+	fs.stat(target, async (err, stat) => {
+		if (!!err || !stat) {
+			cbb();
+			return;
+		}
+		if (stat.isDirectory()) {
+			stat = await fs.deleteFolders([target], true);
+		}
+		else {
+			stat = await fs.deleteFiles([target]);
+		}
+		if (stat.failed.length > 0) {
+			let result = {};
+			result.message = setStyle(setStyle('无法复制到目标位置：', 'bold') + target, 'red');
+			result.err = err;
+			res(result);
+			if (cb) cb(result);
+			return;
+		}
+		cbb();
+	});
+});
+var duplicateFileOld = (source, target, cb) => new Promise(async (res, rej) => {
 	source = getFileNameInShell(source);
 	target = getFileNameInShell(target);
 	var cmd = 'cp -a ' + source + ' ' + target;
@@ -806,6 +854,8 @@ omniHistory.record = (changed, failed) => {
 omniHistory.recall = mode => {
 	var changed = [], failed = [];
 	var list = !!mode ? omniHistory.total : omniHistory.last;
+	list.changed.sort((a, b) => omniHistory.timeline[a] < omniHistory.timeline[b] ? 1 : -1);
+	list.failed.sort((a, b) => omniHistory.timeline[a] < omniHistory.timeline[b] ? 1 : -1);
 	list.changed.forEach(path => changed.push([path, omniHistory.timeline[path]]));
 	list.failed.forEach(path => failed.push([path, omniHistory.timeline[path]]));
 	return { changed, failed };
@@ -833,12 +883,12 @@ var createFilesAndFolders = (group, paths, isFolder, cb) => new Promise(async (r
 	});
 
 	var stats, result;
-	logger.info(setStyle('开始创建文件', 'green bold'));
+	logger.log(setStyle('开始创建文件', 'green bold'));
 	stats = await fs.filterPath(folders); // 检查路径是否存在是否是文件
 	result = await fs.createFolders(stats.nonexist, logger); // 批量创建不存在的路径
 	stats.changed = result.success;
 	stats.failed = result.failed;
-	logger.info(setStyle('目录已创建', 'green bold'));
+	logger.log(setStyle('目录已创建', 'green bold'));
 	omniHistory.record(stats.changed, stats.failed);
 	folders = [];
 	stats.folders.forEach(path => folders.push(path));
@@ -933,6 +983,45 @@ var deleteFilesAndFolders = (group, paths, force, cb) => new Promise(async (res,
 
 	res();
 	if (cb) cb();
+});
+var copyFilesFromOutside = (source, target, group, force, cb) => new Promise(async (res, rej) => {
+	// copy ~/Documents/works/ryx_pis/pom.xml test.txt -g work
+	// del test.txt -g work
+	handcraftCreating = true;
+
+	var range = group.range, files = [];
+	source = source.replace(/^~[\/\\]/, process.env.HOME + Path.sep);
+	target = target.replace(/^[\/\\]/, '');
+	range.forEach(path => files.push(path + Path.sep + target));
+
+	var count = files.length, changed = [], failed = [];
+	var finish = () => {
+		handcraftCreating = false;
+		res();
+		if (cb) cb();
+	};
+	if (count === 0) {
+		await waitTick();
+		finish();
+	}
+	else files.forEach(async target => {
+		logger.log(setStyle('复制文件：', 'green bold') + '从 ' + source + ' 到 ' + target);
+		var err = await duplicateFile(source, target);
+		if (!!err) {
+			failed.push(target);
+			logger.error(err.message);
+		}
+		else {
+			changed.push(target);
+		}
+		count --;
+		if (count > 0) return;
+		omniHistory.record(changed, failed);
+		logger.log(setStyle('复制文件完成', 'green bold'));
+		if (changed.length > 0) logger.log('    ' + setStyle('共复制' + changed.length + '个文件、目录', 'blue bold'));
+		if (failed.length > 0) logger.log('    ' + setStyle('共复制失败' + failed.length + '个文件、目录', 'red bold'));
+		finish();
+	});
 });
 
 // 主业务
@@ -1234,6 +1323,7 @@ var rtmLauncher = clp({
 .addOption('--folder -f >> 指定创建的是文件夹')
 .add('copy|cp <source> <target> >> 从外源复制文件进来')
 .addOption('--group -g <group> >> 指定分组')
+.addOption('--folder -f >> 强制覆盖文件')
 .add('health|ht [duration(^\\d+$|^\\d+\\.\\d*$)=1] >> 查看当前 CPU 与 MEM 使用状态，统计时长单位为秒')
 .addOption('--interval -i [interval(^\\d+$|^\\d+\\.\\d*$)=1] >> 定式更新，更新间隔单位为秒')
 .addOption('--stop -s >> 定制定式更新')
@@ -1429,11 +1519,12 @@ var rtmLauncher = clp({
 			timer = null;
 		}
 	}, delay);
-	getHealth(duration, result => {
+	getHealth(duration, async result => {
 		command.cli.updateProcessbar(0, 1);
 		if (timer) clearInterval(timer);
 		timer = null;
-		setImmediate(() => {showHealth(result, command)});
+		await waitTick();
+		showHealth(result, command);
 	});
 	if (!isNaN(param.interval)) {
 		if (!!healthWatcher) clearInterval(healthWatcher);
@@ -1478,16 +1569,14 @@ var rtmLauncher = clp({
 	message.push(setStyle(title, 'bold underline'));
 	message.push('    ' + setStyle('同步成功文件：', 'green bold'));
 	history.changed.map(path => {
-		var line = path[0].length + 2, len = 120;
-		if (len < line) len = Math.ceil(line / 20) * 20;
-		line = path[0].length;
+		var line = getCLLength(path[0]), vlen = line + 2, len = 120;
+		if (len < vlen) len = Math.ceil(vlen / 20) * 20;
 		message.push('        ' + path[0] + String.blank(len - line) + '（' + timeNormalize(path[1]) + '）');
 	});
 	message.push('    ' + setStyle('同步失败文件：', 'red bold'));
 	history.failed.map(path => {
-		var line = path[0].length + 2, len = 120;
-		if (len < line) len = Math.ceil(line / 20) * 20;
-		line = path[0].length;
+		var line = getCLLength(path[0]), vlen = line + 2, len = 120;
+		if (len < vlen) len = Math.ceil(vlen / 20) * 20;
 		message.push('        ' + path[0] + String.blank(len - line) + '（' + timeNormalize(path[1]) + '）');
 	});
 	logger.log(message.join('\n'));
@@ -1533,15 +1622,47 @@ var rtmLauncher = clp({
 	}
 	var group = params.group, force = !!params.force;
 	
-	await deleteFilesAndFolders(group, paths, force);
+	await deleteFilesAndFolders(syncGroups[group], paths, force);
 
 	await revokeMission(true);
 })
-.on('copy', (params, all, command) => {
-	var source = params.source, target = params.target;
-	if (!source) logger.error('缺少源文件路径！');
-	else if (!target) logger.error('缺少目标文件路径！');
-	logger.log('复制文件 ' + source + ' 到 ' + target + ' 中...');
+.on('copy', async (params, all, command) => {
+	var group = params.group;
+	if (!group) {
+		command.showError('所属分组参数不能为空！');
+		return;
+	}
+	group = syncGroups[group];
+	if (!group) {
+		command.showError('所选分组不存在！');
+		return;
+	}
+	if (group.mode === WatchMode.NOTREADY) {
+		command.showError('所选分组检测中，请稍后再试！');
+		return;
+	}
+	if (group.mode === WatchMode.WRONG) {
+		command.showError('所选分组异常！');
+		return;
+	}
+	if (group.mode === WatchMode.FILE) {
+		command.showError('不可往文件同步组里复制文件/目录！');
+		return;
+	}
+	var source = params.source;
+	if (!source) {
+		command.showError('不可没有源文件路径！');
+		return;
+	}
+	var target = params.target;
+	if (!target) {
+		command.showError('不可没有目标文件路径！');
+		return;
+	}
+
+	await copyFilesFromOutside(source, target, group, !!params.force);
+
+	await revokeMission(true);
 })
 .on('start', (param, all, command) => {
 	console.log('Start Deamon...');
