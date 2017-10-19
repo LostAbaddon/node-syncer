@@ -189,8 +189,14 @@ class File {
 			source = this.eigen.fullPath;
 			targets.map(async path => {
 				var err = await duplicateFile(source, path);
-				if (!!err) failed.push(path);
-				else changed.push(path);
+				if (!!err) {
+					logger.error(setStyle('同步文件失败：', 'red bold') + path);
+					failed.push(path);
+				}
+				else {
+					logger.log(setStyle('同步文件成功：', 'green bold') + path);
+					changed.push(path);
+				}
 				count --;
 				if (count > 0) return;
 				var result = [changed, failed];
@@ -605,9 +611,18 @@ var duplicateFile = (source, target, cb) => new Promise((res, rej) => {
 				res(result);
 				if (cb) cb(result);
 			}
+			else {
+				
+			}
 			res();
 			if (cb) cb();
 		});
+	};
+	var silence = {
+		log: () => {},
+		info: () => {},
+		warn: (...args) => logger.warn.call(logger, ...args),
+		error: (...args) => logger.error.call(logger, ...args)
 	};
 	fs.stat(source, (err, stat) => {
 		if (!!err || !stat) {
@@ -625,10 +640,10 @@ var duplicateFile = (source, target, cb) => new Promise((res, rej) => {
 			return;
 		}
 		if (stat.isDirectory()) {
-			stat = await fs.deleteFolders([target], true);
+			stat = await fs.deleteFolders([target], true, silence);
 		}
 		else {
-			stat = await fs.deleteFiles([target]);
+			stat = await fs.deleteFiles([target], silence);
 		}
 		if (stat.failed.length > 0) {
 			let result = {};
@@ -899,7 +914,6 @@ var createFilesAndFolders = (group, paths, isFolder, cb) => new Promise(async (r
 	if (cb) cb();
 });
 var deleteFilesAndFolders = (group, paths, force, cb) => new Promise(async (res, rej) => {
-	// del /Users -g work -f
 	handcraftCreating = true;
 
 	var files = [], range, stat;
@@ -1172,6 +1186,7 @@ var cmdLauncher = clp({
 .addOption('--ignore -i >> 是否忽略删除')
 .addOption('--deamon -d [duration(^\\d+$|^\\d+\\.\\d*$)=10] >> 是否启用监控模式，可配置自动监控时间间隔，默认时间为十分钟')
 .addOption('--deaf -df >> 失聪模式')
+.addOption('--delay -dl <delay> >> 巡视后行动延迟时长')
 .addOption('--silence -s >> 不启用命令行控制面板')
 .addOption('--web -w >> 启用Web后台模式' + setStyle('【待开发】', ['green', 'bold']))
 .on('command', params => {
