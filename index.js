@@ -12,6 +12,9 @@
  * 			多层目录组监控
  */
 
+const SyncerTitle = '同步者';
+const SyncerVersion = '1.0.3.dev';
+
 const fs = require('fs');
 const Path = require('path');
 const exec = require('child_process').exec;
@@ -53,12 +56,13 @@ var syncConfig = {
 	web: false,
 	ignores: [],
 	group: {},
-	syncPrompt: setStyle('同步者：', 'green bold'),
+	syncPrompt: setStyle(SyncerTitle + '：', 'green bold'),
 	mapPaddingLeft: 80,
 	mapPaddingLevel: 20
 };
 var syncGroups = {};
 var handcraftCreating = false;
+var stopPatrol = false;
 
 // 符号相关
 var setSymbols = (host, symbols) => {
@@ -1064,9 +1068,12 @@ var launchSync = groups => new Promise((res, rej) => {
 		res([changeGroup, failGroup, changeList, failList]);
 	});
 });
-var revokeMission = (notFirstLaunch, cb) => new Promise(async (res, rej) => {
+var stopMission = () => {
 	razeAllWatchers();
 	if (!!deamonWatch) clearTimeout(deamonWatch);
+};
+var revokeMission = (notFirstLaunch, cb) => new Promise(async (res, rej) => {
+	stopMission();
 	await launchMission(notFirstLaunch);
 	res();
 	if (cb) cb();
@@ -1139,7 +1146,7 @@ var launchMission = async notFirstLaunch => {
 		changePrompt();
 	}
 
-	if (syncConfig.deamon) {
+	if (syncConfig.deamon && !stopPatrol) {
 		watchTrees(syncGroups);
 		if (!!deamonWatch) clearTimeout(deamonWatch);
 		deamonWatch = setTimeout(() => {
@@ -1187,10 +1194,10 @@ var launchShowDiff = async () => {
 
 // 初始化命令行解析
 var cmdLauncher = clp({
-	title: '同步者 v0.1.0',
+	title: SyncerTitle + ' v' + SyncerVersion,
 	mode: 'process'
 })
-.describe('多文件夹自动同步者。\n' + setStyle('当前版本：', 'bold') + 'v0.1.0')
+.describe('多文件夹自动同步者。\n' + setStyle('当前版本：', 'bold') + 'v' + SyncerVersion)
 .addOption('--config -c <config> >> 配置文档地址')
 .addOption('--showdiff -sd >> 只查看变更结果')
 .addOption('--ignore -i >> 是否忽略删除')
@@ -1314,14 +1321,14 @@ var showHealth = (health, command) => {
 
 // 运行时命令行解析
 var rtmLauncher = clp({
-	title: '同步者 v0.1.0',
+	title: SyncerTitle + ' v' + SyncerVersion,
 	mode: 'cli',
 	hint: {
 		welcome: setStyle('欢迎来到同步空间~', 'yellow underline bold'),
 		byebye: setStyle('世界，终结了。。。', 'magenta bold')
 	}
 })
-.describe('多文件夹自动同步者。\n' + setStyle('当前版本：', 'bold') + 'v0.1.0')
+.describe('多文件夹自动同步者。\n' + setStyle('当前版本：', 'bold') + 'v' + SyncerVersion)
 .add('refresh|re >> 强制同步更新')
 .add('start|st >> 开始巡视模式')
 .add('stop|sp >> 停止巡视模式')
@@ -1680,11 +1687,15 @@ var rtmLauncher = clp({
 
 	await revokeMission(true);
 })
-.on('start', (param, all, command) => {
-	console.log('Start Deamon...');
-})
 .on('stop', (param, all, command) => {
-	console.log('Stop Deamon...');
+	logger.log(setStyle('停止巡视', 'bold'));
+	stopPatrol = true;
+	stopMission();
+})
+.on('start', (param, all, command) => {
+	logger.log(setStyle('开始巡视', 'bold'));
+	stopPatrol = false;
+	revokeMission();
 })
 ;
 
