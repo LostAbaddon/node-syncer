@@ -899,6 +899,7 @@ var createFilesAndFolders = (group, paths, isFolder, cb) => new Promise(async (r
 	if (cb) cb();
 });
 var deleteFilesAndFolders = (group, paths, force, cb) => new Promise(async (res, rej) => {
+	// del /Users -g work -f
 	handcraftCreating = true;
 
 	var files = [], range, stat;
@@ -916,6 +917,13 @@ var deleteFilesAndFolders = (group, paths, force, cb) => new Promise(async (res,
 		files = paths.map(p => p.replace(/^~[\/\\]/, process.env.HOME + Path.sep));
 	}
 	stat = await fs.filterPath(files); // 拆分出文件和目录
+	if (stat.files.length + stat.folders.length === 0) {
+		await waitTick();
+		handcraftCreating = false;
+		res();
+		if (cb) cb();
+		return;
+	}
 	paths = [];
 	stat.files.forEach(f => paths.push(f));
 	stat.folders.forEach(f => paths.push(f));

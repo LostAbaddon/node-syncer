@@ -220,6 +220,7 @@ class Params {
 	parse (params, helpMode) {
 		var result = {};
 		if (!(params instanceof Array)) params = paramsSep(params);
+		params = params.map(p => decodeEscape(p)); // 处理转义符
 		var len, index = 0, plen = params.length;
 		// 先解析必填参数
 		len = this.musts.length;
@@ -234,7 +235,7 @@ class Params {
 			if (!!range && !(value + '').match(range)) {
 				throw new Error("参数 " + key + " 的值 " + value + " 不符合取值范围 " + range + " !");
 			}
-			result[key] = decodeEscape(value);
+			result[key] = value;
 			index ++;
 		}
 		// 处理选填参数
@@ -249,7 +250,7 @@ class Params {
 				if (!!r && !(v + '').match(r)) {
 					throw new Error("参数 " + n + " 的值 " + v + " 不符合取值范围 " + r + " !");
 				}
-				result[n] = decodeEscape(v);
+				result[n] = v;
 			}
 			index ++;
 		}
@@ -264,7 +265,7 @@ class Params {
 					if (!!range && !(v + '').match(range)) {
 						throw new Error("缺省参数组 " + this.optionlist + " 的值 " + v + " 不符合取值范围 " + range + " !");
 					}
-					list.push(decodeEscape(v));
+					list.push(v);
 				}
 				if (list.length > 0) result[this.optionlist] = list;
 			}
@@ -543,10 +544,7 @@ class Command {
 		}
 	}
 	parse (command) {
-		console.log(command);
 		command = encodeEscape(command); // 特殊字符转义
-		console.log(command);
-
 		if (command.substring(0, 9) !== '[global] ') command = '[global] ' + command;
 		var sepcmd = Object.keys(this.quests);
 		var cmds = [];
