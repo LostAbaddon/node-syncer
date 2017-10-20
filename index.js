@@ -763,7 +763,7 @@ var treeWatcher = (path, isFile) => (stat, file) => {
 	if (!!watcherTrigger) clearTimeout(watcherTrigger);
 	watcherTrigger = setTimeout(() => {
 		changePrompt(syncConfig.syncPrompt);
-		logger.log(setStyle('发现文件改动', 'blue bold') + '（' + timeNormalize() + '）：' + path + (!!isFile ? '' : file));
+		logger.log(setStyle('发现文件改动', 'blue bold') + '（' + timeNormalize() + '）：' + path + (!!isFile ? '' : '/' + file));
 		changePrompt();
 		launchMission(true);
 	}, syncConfig.delay * 1000);
@@ -797,25 +797,17 @@ var watchTrees = groups => {
 			});
 			continue;
 		}
-		let tree = group.tree;
-		tree = tree.filter(path => path[2] === WatchMode.FOLDER);
-		if (tree.length === 0) continue;
-		tree = tree.map(path => path[0]);
-		var sources = group.map.source;
-		tree.map(path => {
-			sources.map(source => {
-				var url = source + path;
-				if (!!fileWatchers[url]) return;
-				var watch;
-				try {
-					watch = fs.watch(url, treeWatcher(url));
-				}
-				catch (err) {
-					logger.error(err.message);
-					console.error(err);
-				}
-				if (!!watch) fileWatchers[url] = watch;
-			});
+		group.range.forEach(path => {
+			if (!!fileWatchers[path]) return;
+			var watch;
+			try {
+				watch = fs.watch(path, { recursive: true }, treeWatcher(path));
+			}
+			catch (err) {
+				logger.error(err.message);
+				console.error(err);
+			}
+			if (!!watch) fileWatchers[path] = watch;
 		});
 	}
 };
@@ -1403,15 +1395,17 @@ var taskShowHistory = showAll => new Promise(async (res, rej) => {
 	message.push(setStyle(title, 'bold underline'));
 	message.push('    ' + setStyle('同步成功文件：', 'green bold'));
 	history.changed.map(path => {
-		var line = getCLLength(path[0]), vlen = line + 2, len = 120;
+		var p = path[0];
+		if (p.indexOf(process.env.HOME) === 0) p = p.replace(process.env.HOME, '~');
+		var line = getCLLength(p), vlen = line + 2, len = 120;
 		if (len < vlen) len = Math.ceil(vlen / 20) * 20;
-		message.push('        ' + path[0] + String.blank(len - line) + '（' + timeNormalize(path[1]) + '）');
+		message.push('        ' + p + String.blank(len - line) + '（' + timeNormalize(path[1]) + '）');
 	});
 	message.push('    ' + setStyle('同步失败文件：', 'red bold'));
 	history.failed.map(path => {
-		var line = getCLLength(path[0]), vlen = line + 2, len = 120;
+		var line = getCLLength(p), vlen = line + 2, len = 120;
 		if (len < vlen) len = Math.ceil(vlen / 20) * 20;
-		message.push('        ' + path[0] + String.blank(len - line) + '（' + timeNormalize(path[1]) + '）');
+		message.push('        ' + p + String.blank(len - line) + '（' + timeNormalize(path[1]) + '）');
 	});
 	logger.log(message.join('\n'));
 	res();
@@ -1428,13 +1422,6 @@ var taskStartMission = () => new Promise(async (res, rej) => {
 	revokeMission();
 	res();
 });
-// var taskShowList = () => new Promise(async (res, rej) => {
-// 	res();
-// });
-// var taskShowList = () => new Promise(async (res, rej) => {
-// 	res();
-// });
-
 
 // 初始化命令行解析
 var cmdLauncher = clp({
