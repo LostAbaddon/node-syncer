@@ -24,6 +24,7 @@ require('./core/fsutils');
 require('./core/events/pipe');
 
 const clp = require('./core/commandline/commander');
+const getCLLength = clp.getCLLength;
 const getHealth = require('./core/health');
 const setStyle = require('./core/setConsoleStyle');
 const timeNormalize = global.Utils.getTimeString;
@@ -690,13 +691,6 @@ var readJSON = file => new Promise((res, rej) => {
 		res(content);
 	});
 });
-const RegMonoWidthChars = /[\x00-\xff–]+/g;
-var getCLLength = text => {
-	var len = text.length;
-	var ascii = text.match(RegMonoWidthChars);
-	if (!ascii) ascii = [''];
-	return len * 2 - ascii.join('').length;
-};
 var waitTick = async () => new Promise((res, rej) => setImmediate(res));
 
 // CLI相关

@@ -41,6 +41,14 @@ require('../extend');
 const setStyle = require('../setConsoleStyle');
 const cli = require('./cli');
 
+const RegMonoWidthChars = /[\x00-\xff–]+/g;
+const getCLLength = text => {
+	var len = text.length;
+	var ascii = text.match(RegMonoWidthChars);
+	if (!ascii) ascii = [''];
+	return len * 2 - ascii.join('').length;
+};
+
 const isDate = v => v.match(/^\d{2,4}-\d{1,2}-\d{1,2}(\/\d{1,2}:\d{1,2}(:\d{1,2}(\.\d+)?)?)?$/);
 const toRegExp = reg => new RegExp(reg);
 
@@ -712,9 +720,10 @@ const GenerateHelp = (command, cmdlist, title) => {
 	}
 	selectCommands.map(q => {
 		if (Object.keys(scp).length > 0 && !scp[q.command]) return;
-		helpContent += Parser.Helper.quest(q, scp[q.command]) + '\n';
+		helpContent += Parser.Helper.quest(q, scp[q.command]);
 	});
 	if (cmdlist.length <= 1) {
+		helpContent += '\n';
 		helpContent += String.blank(HelpLayoutConfig.help) + String.blank(HelpLayoutConfig.right - HelpLayoutConfig.help, '=') + '\n';
 		helpContent += String.blank(HelpLayoutConfig.help) + setStyle('参数说明', 'bold') + '\n';
 		helpContent += String.blank(HelpLayoutConfig.help) + String.blank(HelpLayoutConfig.right - HelpLayoutConfig.help, '-') + '\n';
@@ -732,42 +741,62 @@ const GenerateHelp = (command, cmdlist, title) => {
 	return helpContent;
 };
 const GenerateQuestHelp = (quest, optlist) => {
-	var title = quest.command;
-	if (title === '[global]') title = 'default';
-	var line = setStyle(title, 'bold') + String.blank(HelpLayoutConfig.right - title.length) + quest.desc + '\n';
-	if (!!quest.alias && quest.alias.length > 0) line += String.blank(HelpLayoutConfig.lev1) + setStyle('别名：', 'bold') + String.blank(HelpLayoutConfig.lev2 - HelpLayoutConfig.lev1 - 6) + quest.alias.join(' | ') + '\n';
+	var title = quest.command, line;
+	if (title === '[global]') {
+		title = 'default';
+		quest.desc = quest.desc || '默认环境指令';
+	}
+	line = setStyle(title, 'bold');
+	if (!!quest.alias && quest.alias.length > 0) {
+		line += String.blank(HelpLayoutConfig.lev1 - getCLLength(title)) + setStyle('别名：', 'bold');
+		title = quest.alias.join(' | ');
+		line += String.blank(HelpLayoutConfig.lev2 - HelpLayoutConfig.lev1 - 6) + title;
+		line += String.blank(HelpLayoutConfig.right - HelpLayoutConfig.lev2 - getCLLength(title));
+	}
+	else {
+		line += String.blank(HelpLayoutConfig.right - title.length);
+	}
+	line += quest.desc + '\n';
 	var filterOption = !!optlist && optlist.length > 0;
 	if (!filterOption) {
+		title = '参数：';
 		if (quest.params.notEmpty) line += String.blank(HelpLayoutConfig.lev1) + setStyle('参数：', 'bold');
-		if (quest.params.musts.length > 0) {
-			quest.params.musts.map(p => {
-				line += '\n' + Parser.Helper.param(p, 0, quest.params.defaultValues[p], quest.params.valueRanges[p]);
-			});
-		}
-		if (quest.params.options.length > 0) {
-			quest.params.options.map(p => {
-				line += '\n' + Parser.Helper.param(p, 1, quest.params.defaultValues[p], quest.params.valueRanges[p]);
-			});
-		}
+		quest.params.musts.map(p => {
+			line += Parser.Helper.param(p, 0, quest.params.defaultValues[p], quest.params.valueRanges[p], 0, title) + '\n';
+			title = '';
+		});
+		quest.params.options.map(p => {
+			line += Parser.Helper.param(p, 1, quest.params.defaultValues[p], quest.params.valueRanges[p], 0, title) + '\n';
+			title = '';
+		});
 		if (!!quest.params.optionlist) {
-			line += '\n' + Parser.Helper.param(quest.params.optionlist, 2, quest.params.defaultValues[quest.params.optionlist], quest.params.valueRanges[quest.params.optionlist]);
+			line += Parser.Helper.param(quest.params.optionlist, 2, quest.params.defaultValues[quest.params.optionlist], quest.params.valueRanges[quest.params.optionlist], 0, title) + '\n';
 		}
-		if (quest.params.notEmpty) line += '\n';
 	}
-	if (quest.optionGroup.length > 0) line += String.blank(HelpLayoutConfig.lev1) + setStyle('开关：', 'bold') + '\n';
+	title = '开关：';
+	if (quest.optionGroup.length > 0) line += String.blank(HelpLayoutConfig.lev1) + setStyle(title, 'bold');
 	quest.optionGroup.map(opt => {
 		if (filterOption && optlist.indexOf(opt.name) < 0) {
 			return;
 		}
-		var questline = Parser.Helper.option(opt);
-		if (questline.length > 0) line += questline + '\n';
+		var questline = Parser.Helper.option(opt, title);
+		if (questline.length > 0) {
+			line += questline + '\n';
+			title = '';
+		}
 	});
 	return line;
 };
-const GenerateOptionHelp = option => {
-	var line = '';
-	var text = '--' + option.name;
-	line += String.blank(HelpLayoutConfig.lev2) + setStyle(text, 'bold');
+const GenerateOptionHelp = (option, prefix = '') => {
+	var line, text;
+	if (prefix.length > 0) {
+		line = String.blank(HelpLayoutConfig.lev2 - HelpLayoutConfig.lev1 - getCLLength(prefix));
+	}
+	else {
+		line = String.blank(HelpLayoutConfig.lev2);
+	}
+	text = '--' + option.name;
+	line += setStyle(text, 'bold');
 	if (!!option.short) {
 		text += ' | ' + '-' + option.short;
 		line += ' | ' + setStyle('-' + option.short, 'bold');
@@ -788,10 +817,28 @@ const GenerateOptionHelp = option => {
 	}
 	return line;
 };
-const GenerateParamHelp = (param, mode, defval, range, section) => {
-	var padding = HelpLayoutConfig.lev2;
-	if (section === 1) padding = HelpLayoutConfig.lev3;
-	var line = String.blank(padding);
+const GenerateParamHelp = (param, mode, defval, range, section, prefix = '') => {
+	var padding, line;
+	if (section === 1) {
+		if (prefix.length > 0) {
+			padding = HelpLayoutConfig.lev3 - HelpLayoutConfig.lev1 - getCLLength(prefix);
+			line = String.blank(padding);
+		}
+		else {
+			padding = HelpLayoutConfig.lev3;
+			line = String.blank(padding);
+		}
+	}
+	else {
+		if (prefix.length > 0) {
+			padding = HelpLayoutConfig.lev2 - HelpLayoutConfig.lev1 - getCLLength(prefix);
+			line = String.blank(padding);
+		}
+		else {
+			padding = HelpLayoutConfig.lev2;
+			line = String.blank(padding);
+		}
+	}
 	var title;
 	if (mode === 0) title = '<' + param + '>';
 	else if (mode === 2) title = '[...' + param + ']';
@@ -991,6 +1038,7 @@ Parser.Helper = {
 	option: GenerateOptionHelp,
 	param: GenerateParamHelp
 };
+Parser.getCLLength = getCLLength;
 
 global.Utils = global.Utils || {};
 global.Utils.CLP = Parser;
