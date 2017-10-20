@@ -3,7 +3,7 @@
  * Desc:    异步事件管道
  * Author:	LostAbaddon
  * Version:	0.0.1
- * Date:	2017.10.19
+ * Date:	2017.10.20
  */
 
 const EM = require('../eventManager');
@@ -21,8 +21,9 @@ class PipeEvent extends EM.EventData {
 	}
 }
 class Pipe {
-	constructor (reverse) {
+	constructor (reverse = false) {
 		new EM(this, [
+			'start',
 			'step',
 			'done'
 		]);
@@ -32,7 +33,6 @@ class Pipe {
 			enumerable: false,
 			get: () => pipe
 		});
-		reverse = !!reverse;
 		Object.defineProperty(this, 'reverse', {
 			configurable: false,
 			enumerable: false,
@@ -55,6 +55,7 @@ class Pipe {
 			if (this.running) return;
 			this.running = true;
 			var event = new PipeEvent(this);
+			this.onStart(event);
 			while (this.pipe.length > 0) {
 				let task;
 				if (this.reverse) task = this.pipe.pop();
@@ -74,9 +75,92 @@ class Pipe {
 	get length () {
 		return this.pipe.length;
 	}
+	copy () {
+		var duplicate = new Pipe(this.reverse);
+		this.pipe.forEach(task => duplicate.add(task[0], ...task[1]));
+		return duplicate;
+	}
+}
+
+class BarrierKey {
+	constructor (barrier) {
+		if (!(barrier instanceof Barrier)) return;
+		this.barrier = barrier;
+		this.key = Symbol();
+	}
+	open () {
+		this.barrier.solve(this);
+		return this;
+	}
+}
+class Barrier {
+	constructor () {
+		new EM(this, [
+			'active',
+			'step',
+			'done'
+		]);
+		var barrier = [];
+		Object.defineProperty(this, 'barrier', {
+			configurable: false,
+			enumerable: false,
+			get: () => barrier
+		});
+		var worker = [];
+		Object.defineProperty(this, 'worker', {
+			configurable: false,
+			enumerable: false,
+			get: () => worker
+		});
+	}
+	request () {
+		var key = new BarrierKey(this);
+		this.barrier.push(key.key);
+		return key;
+	}
+	active () {
+		if (this.worker.length > 0) return this;
+		this.barrier.forEach(b => this.worker.push(b));
+		this.worker.waiters = [];
+		this.onActive(this);
+		return this;
+	}
+	solve (key) {
+		return new Promise((res, rej) => {
+			if (!(key instanceof BarrierKey)) {
+				res();
+				return;
+			}
+			var index = this.worker.indexOf(key.key);
+			if (index < 0) {
+				res();
+				return;
+			}
+			this.worker.splice(index, 1);
+			this.worker.waiters.push(res);
+			this.onStep(this);
+			if (this.worker.length === 0) {
+				this.worker.waiters.forEach(res => res());
+				this.worker.waiters.splice(0, this.worker.waiters.length);
+				this.onDone(this);
+			}
+		});
+	}
+	get length () {
+		return this.barrier.length;
+	}
+	get waiting () {
+		return this.worker.length;
+	}
+	copy () {
+		var duplicate = new Barrier();
+		this.barrier.forEach(b => duplicate.barrier.push(b));
+		return duplicate;
+	}
 }
 
 module.exports = Pipe;
 global.Utils = global.Utils || {};
 global.Utils.Events = global.Utils.Events || {};
 global.Utils.Events.Pipe = Pipe;
+global.Utils.Events.Barrier = Barrier;
