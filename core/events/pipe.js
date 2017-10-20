@@ -86,11 +86,18 @@ class BarrierKey {
 	constructor (barrier) {
 		if (!(barrier instanceof Barrier)) return;
 		this.barrier = barrier;
-		this.key = Symbol();
+		var key = Symbol();
+		Object.defineProperty(this, 'key', {
+			configurable: false,
+			enumerable: true,
+			get: () => key
+		});
 	}
-	open () {
-		this.barrier.solve(this);
-		return this;
+	solve () {
+		return new Promise(async (res, rej) => {
+			await this.barrier.solve(this);
+			res();
+		});
 	}
 }
 class Barrier {
@@ -159,7 +166,9 @@ class Barrier {
 	}
 }
 
-module.exports = Pipe;
+exports.Pipe = Pipe;
+exports.Barrier = Barrier;
+
 global.Utils = global.Utils || {};
 global.Utils.Events = global.Utils.Events || {};
 global.Utils.Events.Pipe = Pipe;

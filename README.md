@@ -3,12 +3,23 @@
 
 ----
 
--	多组目录同步
+-	多分组多目录文件同步
+	-	可指定文件同步组与目录同步组
+-	可通过正则表达式设置同步文件过滤规则
+-	自动更新文件、创建不存在文件夹（可通过失聪模式关闭）
+-	定时自动更新
+-	内建命令行交互模式
+	-	从外部复制文件入库
+	-	添加文件/目录
+	-	删除文件/目录
+	-	强制立即同步
+	-	查看同步历史（上次与全部历史）
+	-	启动与停止巡视
+	-	查看系统运行状态，并可设置定时刷新
+	-	浏览监视目录组与同步状态
+	-	所有指令可通过管道连续执行
+-	配置文件变更后自动热更新
 -	多目录自动识别是否加载
--	自动更新文件、创建不存在文件夹
--	文件变动监控
--	监控模式下可自动判别文件的删除与改名
--	自定义过滤条件
 
 ----
 
@@ -27,7 +38,7 @@ CLI支持简单交互，如等待输入、多选、进度条更新等。
 
 - 外部命令
 
-`--help|-h --config|-c <config> --showdiff|-sd --ignore|-i --deamon|-d [duration] --deaf|-df --delay|-dl <delay> --silence|-s --web|-w`
+`--help|-h --config|-c <config> --showdiff|-sd --ignore|-i --deamon|-d [duration] --deaf|-df --delay|-dl <delay> --silence|-s --web|-w --socket|-skt`
 
 参数|缩写|说明
 -|-|-
@@ -42,17 +53,19 @@ CLI支持简单交互，如等待输入、多选、进度条更新等。
 --delay | -dl | 巡视后行动延迟时长
 --silence | -s | 不启用命令行控制面板
 --web | -w | 启用Web后台模式【待开发】
+--socket | -skt | 启用Socket后台模式【待开发】
 
 - 内部命令
 
 ```
+help|--help|-h
 refresh|re
 start|st
 stop|sp
 list|lt --group|-g <group> --files|-f <path> --all|-a
 delete|del [...files] --group|-g <group>
 create|new [...files] --group|-g <group> --folder|-f
-copy|cp <source> <target> --group|-g <group>
+copy|cp <source> <target> --group|-g <group> --force|-f 
 health|ht [duration] --interval|-i [interval] --stop|-s
 history|his --all|-a
 status|stt
@@ -75,6 +88,7 @@ v1.0.3（开发中）
 	-	启动巡视
 	-	停止巡视
 -	出错重试（开发中）
+-	运行状态锁定CLI（开发中）
 -	CLI模式下的Tab键补全（开发中）
 -	监控模式下可自动判别文件的删除与改名（开发中）
 -	Socket连接与Web连接模式（开发中）

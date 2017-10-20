@@ -17,7 +17,6 @@ const SyncerVersion = '1.0.3.dev';
 
 const fs = require('fs');
 const Path = require('path');
-const exec = require('child_process').exec;
 require('./core/extend');
 require('./core/datetime');
 require('./core/logger');
@@ -55,6 +54,7 @@ var syncConfig = {
 	silence: true,
 	duration: null,
 	web: false,
+	socket: false,
 	ignores: [],
 	group: {},
 	syncPrompt: setStyle(SyncerTitle + '：', 'green bold'),
@@ -1378,6 +1378,8 @@ var taskShowStatus = () => new Promise(async (res, rej) => {
 	message.push('    ' + setStyle(title, 'bold') + String.blank(padding - getCLLength(title)) + (syncConfig.ignore ? setStyle('开启', 'green') : '关闭'));
 	title = '网络值守模式：';
 	message.push('    ' + setStyle(title, 'bold') + String.blank(padding - getCLLength(title)) + (syncConfig.web ? setStyle('开启', 'green') : '关闭'));
+	title = 'Socket值守模式：';
+	message.push('    ' + setStyle(title, 'bold') + String.blank(padding - getCLLength(title)) + (syncConfig.socket ? setStyle('开启', 'green') : '关闭'));
 	message.push('    分组情况请用 list 命令查看。');
 	logger.log(message.join('\n'));
 	res();
@@ -1437,6 +1439,7 @@ var cmdLauncher = clp({
 .addOption('--delay -dl <delay> >> 巡视后行动延迟时长')
 .addOption('--silence -s >> 不启用命令行控制面板')
 .addOption('--web -w >> 启用Web后台模式' + setStyle('【待开发】', ['green', 'bold']))
+.addOption('--socket -skt >> 启用Socket后台模式' + setStyle('【待开发】', ['green', 'bold']))
 .on('command', params => {
 	if (!!params.config) syncConfig.file = params.config;
 	if (!!params.showdiff) syncConfig.showdiff = params.showdiff;
@@ -1575,7 +1578,7 @@ var rtmLauncher = clp({
 .addOption('--folder -f >> 指定创建的是文件夹')
 .add('copy|cp <source> <target> >> 从外源复制文件进来')
 .addOption('--group -g <group> >> 指定分组')
-.addOption('--folder -f >> 强制覆盖文件')
+.addOption('--force -f >> 强制覆盖文件')
 .add('health|ht [duration(^\\d+$|^\\d+\\.\\d*$)=1] >> 查看当前 CPU 与 MEM 使用状态，统计时长单位为秒')
 .addOption('--interval -i [interval(^\\d+$|^\\d+\\.\\d*$)=1] >> 定式更新，更新间隔单位为秒')
 .addOption('--stop -s >> 定制定式更新')
