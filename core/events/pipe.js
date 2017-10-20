@@ -8,6 +8,7 @@
 
 const EM = require('../eventManager');
 
+const private = new WeakMap();
 class PipeEvent extends EM.EventData {
 	constructor (pipe) {
 		super('pipeEvent', pipe);
@@ -28,37 +29,45 @@ class Pipe {
 		var pipe = [];
 		Object.defineProperty(this, 'pipe', {
 			configurable: false,
+			enumerable: false,
 			get: () => pipe
 		});
 		reverse = !!reverse;
 		Object.defineProperty(this, 'reverse', {
 			configurable: false,
+			enumerable: false,
 			get: () => reverse
 		});
+		var running = false;
+		Object.defineProperty(this, 'running', {
+			enumerable: false,
+			get: () => running,
+			set: value => running = value
+		});
 	}
-	add (task) {
-		if (task instanceof Array) {
-			task = task.filter(t => t instanceof Function);
-			this.pipe.splice(this.pipe.length, 0, ...task);
-		}
-		else if (task instanceof Function) {
-			this.pipe.push(task);
-		}
+	add (task, ...args) {
+		if (!(task instanceof Function)) return this;
+		this.pipe.push([task, args]);
 		return this;
 	}
-	launch (...args) {
+	launch () {
 		return new Promise(async (res, rej) => {
+			if (this.running) return;
+			this.running = true;
 			var event = new PipeEvent(this);
-			args.push(event);
 			while (this.pipe.length > 0) {
-				var task;
+				let task;
 				if (this.reverse) task = this.pipe.pop();
 				else task = this.pipe.shift();
+				let args = task[1];
+				task = task[0];
 				event.update();
+				args.push(event);
 				await task(...args);
-				this.onStep(pipe);
+				this.onStep(event);
 			}
-			this.onDone(pipe);
+			this.onDone(event);
+			this.running = false;
 			res();
 		});
 	}

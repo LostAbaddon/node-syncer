@@ -917,7 +917,7 @@ var createFilesAndFolders = (group, paths, isFolder, cb) => new Promise(async (r
 	handcraftCreating = false;
 
 	res();
-	if (cb) cb();
+	if (cb instanceof Function) cb();
 });
 var deleteFilesAndFolders = (group, paths, force, cb) => new Promise(async (res, rej) => {
 	handcraftCreating = true;
@@ -942,7 +942,7 @@ var deleteFilesAndFolders = (group, paths, force, cb) => new Promise(async (res,
 		await waitTick();
 		handcraftCreating = false;
 		res();
-		if (cb) cb();
+		if (cb instanceof Function) cb();
 		return;
 	}
 	paths = [];
@@ -999,7 +999,7 @@ var deleteFilesAndFolders = (group, paths, force, cb) => new Promise(async (res,
 	handcraftCreating = false;
 
 	res();
-	if (cb) cb();
+	if (cb instanceof Function) cb();
 });
 var copyFilesFromOutside = (source, target, group, force, cb) => new Promise(async (res, rej) => {
 	handcraftCreating = true;
@@ -1013,7 +1013,7 @@ var copyFilesFromOutside = (source, target, group, force, cb) => new Promise(asy
 	var finish = () => {
 		handcraftCreating = false;
 		res();
-		if (cb) cb();
+		if (cb instanceof Function) cb();
 	};
 	if (count === 0) {
 		await waitTick();
@@ -1076,7 +1076,7 @@ var revokeMission = (notFirstLaunch, cb) => new Promise(async (res, rej) => {
 	stopMission();
 	await launchMission(notFirstLaunch);
 	res();
-	if (cb) cb();
+	if (cb instanceof Function) cb();
 });
 var launchMission = async notFirstLaunch => {
 	var log, message = [''];
@@ -1191,6 +1191,250 @@ var launchShowDiff = async () => {
 		}
 	}
 };
+
+// 任务管理
+var missionPipe = new global.Utils.Events.Pipe();
+var taskRefresh = () => new Promise(async (res, rej) => {
+	await revokeMission();
+	res();
+});
+var taskShowList = (group, path, showAll) => new Promise(async (res, rej) => {
+	var groupList = Object.keys(syncGroups);
+	var groupCount = [groupList.length, 0, 0, groupList.length];
+	groupList = { folder: [], file: [], wrong: [] };
+	for (let g in syncGroups) {
+		g = syncGroups[g];
+		if (g.mode !== WatchMode.NOTREADY) {
+			groupCount[3] --;
+			if (g.mode === WatchMode.FILE) {
+				groupCount[1] ++;
+				groupList.file.push(g);
+			}
+			else if (g.mode === WatchMode.FOLDER) {
+				groupCount[2] ++;
+				groupList.folder.push(g);
+			}
+			else {
+				groupList.wrong.push(g);
+			}
+		}
+	}
+	if (groupCount[3] > 0) {
+		logger.error('设置读取暂未完成，请稍等。。。');
+		res();
+		return;
+	}
+
+	if (!group) {
+		let wrongCount = groupCount[0] - groupCount[1] - groupCount[2];
+		let message = [ '' ];
+		message.push(setStyle(`共有 ${groupCount[0]} 个分组，其中 ${groupCount[2]} 个目录分组、 ${groupCount[1]} 个文件分组和 ${wrongCount} 个错误分组。`, 'bold'));
+		if (groupCount[2] > 0) {
+			message.push(setStyle(`目录分组（${groupCount[2]} 个）：`, 'green bold'));
+			groupList.folder.map(g => {
+				message.push('    ' + setStyle('分组：' + g.name, 'bold'));
+				for (let folder in g.folders) {
+					let state = g.folders[folder];
+					if (g.folders[folder] === FolderState.NOTEXIST) {
+						message.push('        - ' + setStyle('路径：' + folder + '（不存在）', 'red bold'));
+					}
+					else {
+						message.push('        - ' + setStyle('路径：', 'bold') + folder);
+					}
+				}
+			});
+		}
+		if (groupCount[1] > 0) {
+			message.push(setStyle(`文件分组（${groupCount[1]} 个）：`, 'yellow bold'));
+			groupList.file.map(g => {
+				message.push('    ' + setStyle('分组：' + g.name, 'bold'));
+				for (let folder in g.folders) {
+					let state = g.folders[folder];
+					if (g.folders[folder] === FolderState.NOTEXIST) {
+						message.push('        - ' + setStyle('路径：' + folder + '（不存在）', 'red bold'));
+					}
+					else {
+						message.push('        - ' + setStyle('路径：', 'bold') + folder);
+					}
+				}
+			});
+		}
+		if (wrongCount > 0) {
+			message.push(setStyle(`错误分组（${wrongCount} 个）：`, 'red bold'));
+			groupList.wrong.map(g => {
+				message.push('    ' + setStyle('分组：' + g.name, 'bold'));
+				for (let folder in g.folders) {
+					let state = g.folders[folder];
+					if (g.folders[folder] === FolderState.NOTEXIST) {
+						message.push('        - ' + setStyle('路径：' + folder + '（不存在）', 'red bold'));
+					}
+					else {
+						message.push('        - ' + setStyle('路径：', 'bold') + folder);
+					}
+				}
+			});
+		}
+		logger.log(message.join('\n'));
+	}
+	else {
+		let g = syncGroups[group];
+		if (!g) {
+			logger.error('指定分组 ' + group + ' 不存在！');
+			res();
+			return;
+		}
+		let state = '';
+		let message = [ '' ];
+		if (g.mode === WatchMode.FILE) state = '监控文件';
+		else if (g.mode === WatchMode.FOLDER) state = '监控目录';
+		else state = '异常';
+		message.push(setStyle('分组：', 'bold') + group);
+		message.push(setStyle('状态：', 'bold') + state);
+		if (g.mode !== WatchMode.WRONG) {
+			let folders = g.folders;
+			let counts = [0, 0, [], []];
+			for (let g in folders) {
+				if (folders[g] === FolderState.EXIST) {
+					counts[0] ++;
+					counts[2].push(g);
+				}
+				else {
+					counts[1] ++;
+					counts[3].push(g);
+				}
+			}
+			message.push(setStyle('监控路径数：', 'bold') + (counts[0] + counts[1]));
+			if (counts[0] > 0) {
+				message.push('    ' + setStyle('可监控路径：', 'bold') + counts[0]);
+				counts[2].map(p => message.push('        ' + p));
+			}
+			if (counts[1] > 0) {
+				message.push('    ' + setStyle('异常路径：', 'red bold') + counts[1]);
+				counts[3].map(p => message.push('        ' + setStyle(p, 'red')));
+			}
+		}
+		message.push(setStyle('文件同步状态：', 'bold'));
+		let grp = syncGroups[group];
+		let tree = grp.tree;
+		if (!showAll) {
+			tree = tree.filter(t => t[1] !== SyncState.SYNCED)
+		}
+		if (!!path) {
+			tree = tree.filter(t => t[0].indexOf(path) >= 0)
+		}
+		if (tree.length === 0) {
+			if (showAll) message.push('    ' + setStyle('无文件', 'blue bold'));
+			else message.push('    ' + setStyle('都已同步', 'green bold'));
+		}
+		tree.map(t => {
+			var len = getCLLength(t[0]), vlen = len + 2;
+			vlen = Math.ceil(vlen / syncConfig.mapPaddingLevel) * syncConfig.mapPaddingLevel;
+			if (vlen < syncConfig.mapPaddingLeft) vlen = syncConfig.mapPaddingLeft;
+			message.push('    ' + t[0] + String.blank(vlen - len) + ' | ' + SyncState.toString(t[1], true));
+		});
+		logger.log(message.join('\n'));
+	}
+
+	res();
+});
+var taskShowHealth = (duration, interval, stop) => new Promise(async (res, rej) => {
+	var delay = 100, progress = 0;
+	if (delay > duration) delay = duration / 10;
+	rtmLauncher.cli.waitProcessbar('获取同步者健康状态', 100, 1);
+	var timer = setInterval(() => {
+		progress += delay;
+		rtmLauncher.cli.updateProcessbar(0, progress / duration);
+		if (progress >= duration) {
+			if (timer) clearInterval(timer);
+			timer = null;
+		}
+	}, delay);
+	getHealth(duration, async result => {
+		rtmLauncher.cli.updateProcessbar(0, 1);
+		if (timer) clearInterval(timer);
+		timer = null;
+		await waitTick();
+		showHealth(result, rtmLauncher);
+		res();
+	});
+	if (!isNaN(interval)) {
+		if (!!healthWatcher) clearInterval(healthWatcher);
+		healthWatcher = setInterval(async () => {
+			var result = await getHealth(duration * 1000);
+			showHealth(result, rtmLauncher);
+		}, interval * 1000);
+	}
+	else if (stop) {
+		if (!!healthWatcher) clearInterval(healthWatcher);
+	}
+});
+var taskShowStatus = () => new Promise(async (res, rej) => {
+	var message = [ setStyle('当前同步者配置：', 'bold') ], title, padding = 20;
+	title = '配置文件地址：';
+	message.push('    ' + setStyle(title, 'bold') + String.blank(padding - getCLLength(title)) + syncConfig.file);
+	title = '巡视者模式：';
+	message.push('    ' + setStyle(title, 'bold') + String.blank(padding - getCLLength(title)) + (syncConfig.deamon ? setStyle('开启', 'green') : '关闭'));
+	title = '静默模式：';
+	message.push('    ' + setStyle(title, 'bold') + String.blank(padding - getCLLength(title)) + (syncConfig.silence ? setStyle('开启', 'green') : '关闭'));
+	title = '失聪模式：';
+	message.push('    ' + setStyle(title, 'bold') + String.blank(padding - getCLLength(title)) + (syncConfig.deaf ? setStyle('开启', 'green') : '关闭'));
+	title = '巡视间隔：';
+	message.push('    ' + setStyle(title, 'bold') + String.blank(padding - getCLLength(title)) + syncConfig.duration + '秒');
+	title = '巡视延迟：';
+	message.push('    ' + setStyle(title, 'bold') + String.blank(padding - getCLLength(title)) + syncConfig.delay + '秒');
+	title = '漠视模式：';
+	message.push('    ' + setStyle(title, 'bold') + String.blank(padding - getCLLength(title)) + (syncConfig.ignore ? setStyle('开启', 'green') : '关闭'));
+	title = '网络值守模式：';
+	message.push('    ' + setStyle(title, 'bold') + String.blank(padding - getCLLength(title)) + (syncConfig.web ? setStyle('开启', 'green') : '关闭'));
+	message.push('    分组情况请用 list 命令查看。');
+	logger.log(message.join('\n'));
+	res();
+});
+var taskShowHistory = showAll => new Promise(async (res, rej) => {
+	var history, title, message = [];
+	if (showAll) {
+		title = '所有修改历史：';
+		history = omniHistory.recall(true);
+	}
+	else {
+		title = '上次修改记录：';
+		history = omniHistory.recall(false);
+	}
+	message.push(setStyle(title, 'bold underline'));
+	message.push('    ' + setStyle('同步成功文件：', 'green bold'));
+	history.changed.map(path => {
+		var line = getCLLength(path[0]), vlen = line + 2, len = 120;
+		if (len < vlen) len = Math.ceil(vlen / 20) * 20;
+		message.push('        ' + path[0] + String.blank(len - line) + '（' + timeNormalize(path[1]) + '）');
+	});
+	message.push('    ' + setStyle('同步失败文件：', 'red bold'));
+	history.failed.map(path => {
+		var line = getCLLength(path[0]), vlen = line + 2, len = 120;
+		if (len < vlen) len = Math.ceil(vlen / 20) * 20;
+		message.push('        ' + path[0] + String.blank(len - line) + '（' + timeNormalize(path[1]) + '）');
+	});
+	logger.log(message.join('\n'));
+	res();
+});
+var taskStopMission = () => new Promise(async (res, rej) => {
+	logger.log(setStyle('停止巡视', 'bold'));
+	stopPatrol = true;
+	stopMission();
+	res();
+});
+var taskStartMission = () => new Promise(async (res, rej) => {
+	logger.log(setStyle('开始巡视', 'bold'));
+	stopPatrol = false;
+	revokeMission();
+	res();
+});
+// var taskShowList = () => new Promise(async (res, rej) => {
+// 	res();
+// });
+// var taskShowList = () => new Promise(async (res, rej) => {
+// 	res();
+// });
+
 
 // 初始化命令行解析
 var cmdLauncher = clp({
@@ -1351,10 +1595,13 @@ var rtmLauncher = clp({
 .add('history|his >> 查看更新文件历史')
 .addOption('--all -a >> 查看启动以来的更新文件历史')
 .add('status|stt >> 显示当前配置')
-.on('command', (params, command) => {
-	if (Object.keys(params).length > 1) return;
-	if (params.mission.length > 0) return;
+.on('command', (param, command) => {
+	if (Object.keys(param).length > 1) return;
+	if (param.mission.length > 0) return;
 	logger.error('不存在该指令哦！输入 help 查看命令~');
+})
+.on('done', async params => {
+	missionPipe.launch();
 })
 .on('quit', (param, command) => {
 	if (!!healthWatcher) {
@@ -1385,227 +1632,30 @@ var rtmLauncher = clp({
 		process.exit();
 	}, 200);
 })
-.on('refresh', (params, all, command) => {
-	revokeMission();
+.on('refresh', (param, all, command) => {
+	missionPipe.add(taskRefresh);
 })
-.on('list', (params, all, command) => {
-	var groupList = Object.keys(syncGroups);
-	var groupCount = [groupList.length, 0, 0, groupList.length];
-	groupList = { folder: [], file: [], wrong: [] };
-	for (let g in syncGroups) {
-		g = syncGroups[g];
-		if (g.mode !== WatchMode.NOTREADY) {
-			groupCount[3] --;
-			if (g.mode === WatchMode.FILE) {
-				groupCount[1] ++;
-				groupList.file.push(g);
-			}
-			else if (g.mode === WatchMode.FOLDER) {
-				groupCount[2] ++;
-				groupList.folder.push(g);
-			}
-			else {
-				groupList.wrong.push(g);
-			}
-		}
-	}
-	if (groupCount[3] > 0) {
-		logger.error('设置读取暂未完成，请稍等。。。');
-		return;
-	}
-
-	var group = params.group;
-	var path = params.path;
-	var showAll = !!params.all;
-	if (!group) {
-		let wrongCount = groupCount[0] - groupCount[1] - groupCount[2];
-		let message = [ '' ];
-		message.push(setStyle(`共有 ${groupCount[0]} 个分组，其中 ${groupCount[2]} 个目录分组、 ${groupCount[1]} 个文件分组和 ${wrongCount} 个错误分组。`, 'bold'));
-		if (groupCount[2] > 0) {
-			message.push(setStyle(`目录分组（${groupCount[2]} 个）：`, 'green bold'));
-			groupList.folder.map(g => {
-				message.push('    ' + setStyle('分组：' + g.name, 'bold'));
-				for (let folder in g.folders) {
-					let state = g.folders[folder];
-					if (g.folders[folder] === FolderState.NOTEXIST) {
-						message.push('        - ' + setStyle('路径：' + folder + '（不存在）', 'red bold'));
-					}
-					else {
-						message.push('        - ' + setStyle('路径：', 'bold') + folder);
-					}
-				}
-			});
-		}
-		if (groupCount[1] > 0) {
-			message.push(setStyle(`文件分组（${groupCount[1]} 个）：`, 'yellow bold'));
-			groupList.file.map(g => {
-				message.push('    ' + setStyle('分组：' + g.name, 'bold'));
-				for (let folder in g.folders) {
-					let state = g.folders[folder];
-					if (g.folders[folder] === FolderState.NOTEXIST) {
-						message.push('        - ' + setStyle('路径：' + folder + '（不存在）', 'red bold'));
-					}
-					else {
-						message.push('        - ' + setStyle('路径：', 'bold') + folder);
-					}
-				}
-			});
-		}
-		if (wrongCount > 0) {
-			message.push(setStyle(`错误分组（${wrongCount} 个）：`, 'red bold'));
-			groupList.wrong.map(g => {
-				message.push('    ' + setStyle('分组：' + g.name, 'bold'));
-				for (let folder in g.folders) {
-					let state = g.folders[folder];
-					if (g.folders[folder] === FolderState.NOTEXIST) {
-						message.push('        - ' + setStyle('路径：' + folder + '（不存在）', 'red bold'));
-					}
-					else {
-						message.push('        - ' + setStyle('路径：', 'bold') + folder);
-					}
-				}
-			});
-		}
-		logger.log(message.join('\n'));
-	}
-	else {
-		let g = syncGroups[group];
-		if (!g) {
-			logger.error('指定分组 ' + group + ' 不存在！');
-			return;
-		}
-		let state = '';
-		let message = [ '' ];
-		if (g.mode === WatchMode.FILE) state = '监控文件';
-		else if (g.mode === WatchMode.FOLDER) state = '监控目录';
-		else state = '异常';
-		message.push(setStyle('分组：', 'bold') + group);
-		message.push(setStyle('状态：', 'bold') + state);
-		if (g.mode !== WatchMode.WRONG) {
-			let folders = g.folders;
-			let counts = [0, 0, [], []];
-			for (let g in folders) {
-				if (folders[g] === FolderState.EXIST) {
-					counts[0] ++;
-					counts[2].push(g);
-				}
-				else {
-					counts[1] ++;
-					counts[3].push(g);
-				}
-			}
-			message.push(setStyle('监控路径数：', 'bold') + (counts[0] + counts[1]));
-			if (counts[0] > 0) {
-				message.push('    ' + setStyle('可监控路径：', 'bold') + counts[0]);
-				counts[2].map(p => message.push('        ' + p));
-			}
-			if (counts[1] > 0) {
-				message.push('    ' + setStyle('异常路径：', 'red bold') + counts[1]);
-				counts[3].map(p => message.push('        ' + setStyle(p, 'red')));
-			}
-		}
-		message.push(setStyle('文件同步状态：', 'bold'));
-		let grp = syncGroups[group];
-		let tree = grp.tree;
-		if (!showAll) {
-			tree = tree.filter(t => t[1] !== SyncState.SYNCED)
-		}
-		if (!!path) {
-			tree = tree.filter(t => t[0].indexOf(path) >= 0)
-		}
-		if (tree.length === 0) {
-			if (showAll) message.push('    ' + setStyle('无文件', 'blue bold'));
-			else message.push('    ' + setStyle('都已同步', 'green bold'));
-		}
-		tree.map(t => {
-			var len = getCLLength(t[0]), vlen = len + 2;
-			vlen = Math.ceil(vlen / syncConfig.mapPaddingLevel) * syncConfig.mapPaddingLevel;
-			if (vlen < syncConfig.mapPaddingLeft) vlen = syncConfig.mapPaddingLeft;
-			message.push('    ' + t[0] + String.blank(vlen - len) + ' | ' + SyncState.toString(t[1], true));
-		});
-		logger.log(message.join('\n'));
-	}
+.on('list', (param, all, command) => {
+	var group = param.group;
+	var path = param.path;
+	var showAll = !!param.all;
+	missionPipe.add(taskShowList, group, path, showAll);
 })
 .on('health', (param, all, command) => {
-	all.nohint = true;
 	var duration = param.duration * 1000;
-	var delay = 100, progress = 0;
-	if (delay > duration) delay = duration / 10;
-	command.cli.waitProcessbar('获取同步者健康状态', 100, 1);
-	var timer = setInterval(() => {
-		progress += delay;
-		command.cli.updateProcessbar(0, progress / duration);
-		if (progress >= duration) {
-			if (timer) clearInterval(timer);
-			timer = null;
-		}
-	}, delay);
-	getHealth(duration, async result => {
-		command.cli.updateProcessbar(0, 1);
-		if (timer) clearInterval(timer);
-		timer = null;
-		await waitTick();
-		showHealth(result, command);
-	});
-	if (!isNaN(param.interval)) {
-		if (!!healthWatcher) clearInterval(healthWatcher);
-		healthWatcher = setInterval(async () => {
-			var result = await getHealth(duration * 1000);
-			showHealth(result, command);
-		}, param.interval * 1000);
-	}
-	else if (param.stop) {
-		if (!!healthWatcher) clearInterval(healthWatcher);
-	}
+	var interval = param.interval;
+	var stop = param.stop;
+	missionPipe.add(taskShowHealth, duration);
 })
 .on('status', (param, all, command) => {
-	var message = [ setStyle('当前同步者配置：', 'bold') ], title, padding = 20;
-	title = '配置文件地址：';
-	message.push('    ' + setStyle(title, 'bold') + String.blank(padding - getCLLength(title)) + syncConfig.file);
-	title = '巡视者模式：';
-	message.push('    ' + setStyle(title, 'bold') + String.blank(padding - getCLLength(title)) + (syncConfig.deamon ? setStyle('开启', 'green') : '关闭'));
-	title = '静默模式：';
-	message.push('    ' + setStyle(title, 'bold') + String.blank(padding - getCLLength(title)) + (syncConfig.silence ? setStyle('开启', 'green') : '关闭'));
-	title = '失聪模式：';
-	message.push('    ' + setStyle(title, 'bold') + String.blank(padding - getCLLength(title)) + (syncConfig.deaf ? setStyle('开启', 'green') : '关闭'));
-	title = '巡视间隔：';
-	message.push('    ' + setStyle(title, 'bold') + String.blank(padding - getCLLength(title)) + syncConfig.duration + '秒');
-	title = '巡视延迟：';
-	message.push('    ' + setStyle(title, 'bold') + String.blank(padding - getCLLength(title)) + syncConfig.delay + '秒');
-	title = '漠视模式：';
-	message.push('    ' + setStyle(title, 'bold') + String.blank(padding - getCLLength(title)) + (syncConfig.ignore ? setStyle('开启', 'green') : '关闭'));
-	title = '网络值守模式：';
-	message.push('    ' + setStyle(title, 'bold') + String.blank(padding - getCLLength(title)) + (syncConfig.web ? setStyle('开启', 'green') : '关闭'));
-	message.push('    分组情况请用 list 命令查看。');
-	logger.log(message.join('\n'));
+	missionPipe.add(taskShowStatus);
 })
 .on('history', (param, all, command) => {
-	var history, title, message = [];;
-	if (!!param.all) {
-		title = '所有修改历史：';
-		history = omniHistory.recall(true);
-	}
-	else {
-		title = '上次修改记录：';
-		history = omniHistory.recall(false);
-	}
-	message.push(setStyle(title, 'bold underline'));
-	message.push('    ' + setStyle('同步成功文件：', 'green bold'));
-	history.changed.map(path => {
-		var line = getCLLength(path[0]), vlen = line + 2, len = 120;
-		if (len < vlen) len = Math.ceil(vlen / 20) * 20;
-		message.push('        ' + path[0] + String.blank(len - line) + '（' + timeNormalize(path[1]) + '）');
-	});
-	message.push('    ' + setStyle('同步失败文件：', 'red bold'));
-	history.failed.map(path => {
-		var line = getCLLength(path[0]), vlen = line + 2, len = 120;
-		if (len < vlen) len = Math.ceil(vlen / 20) * 20;
-		message.push('        ' + path[0] + String.blank(len - line) + '（' + timeNormalize(path[1]) + '）');
-	});
-	logger.log(message.join('\n'));
+	var showAll = !!param.all;
+	missionPipe.add(taskShowHistory);
 })
-.on('create', async (params, all, command) => {
-	var group = params.group;
+.on('create', async (param, all, command) => {
+	var group = param.group;
 	if (!group) {
 		command.showError('所属分组参数不能为空！');
 		return;
@@ -1627,30 +1677,28 @@ var rtmLauncher = clp({
 		command.showError('不可在文件同步组里创建文件/目录！');
 		return;
 	}
-	var paths = params.files;
+	var paths = param.files;
 	if (!paths || paths.length === 0) {
 		command.showError('不可没有目标路径！');
 		return;
 	}
 
-	await createFilesAndFolders(group, paths, !!params.folder);
-
-	await revokeMission(true);
+	missionPipe.add(createFilesAndFolders, group, paths, !!param.folder);
+	missionPipe.add(revokeMission, true);
 })
-.on('delete', async (params, all, command) => {
-	var paths = params.files;
+.on('delete', async (param, all, command) => {
+	var paths = param.files;
 	if (!paths || paths.length === 0) {
 		command.showError('不可没有目标路径！');
 		return;
 	}
-	var group = params.group, force = !!params.force;
-	
-	await deleteFilesAndFolders(syncGroups[group], paths, force);
+	var group = param.group, force = !!param.force;
 
-	await revokeMission(true);
+	missionPipe.add(deleteFilesAndFolders, syncGroups[group], paths, force);
+	missionPipe.add(revokeMission, true);
 })
-.on('copy', async (params, all, command) => {
-	var group = params.group;
+.on('copy', async (param, all, command) => {
+	var group = param.group;
 	if (!group) {
 		command.showError('所属分组参数不能为空！');
 		return;
@@ -1672,30 +1720,25 @@ var rtmLauncher = clp({
 		command.showError('不可往文件同步组里复制文件/目录！');
 		return;
 	}
-	var source = params.source;
+	var source = param.source;
 	if (!source) {
 		command.showError('不可没有源文件路径！');
 		return;
 	}
-	var target = params.target;
+	var target = param.target;
 	if (!target) {
 		command.showError('不可没有目标文件路径！');
 		return;
 	}
 
-	await copyFilesFromOutside(source, target, group, !!params.force);
-
-	await revokeMission(true);
+	missionPipe.add(copyFilesFromOutside, source, target, group, !!param.force);
+	missionPipe.add(revokeMission, true);
 })
 .on('stop', (param, all, command) => {
-	logger.log(setStyle('停止巡视', 'bold'));
-	stopPatrol = true;
-	stopMission();
+	missionPipe.add(taskStopMission);
 })
 .on('start', (param, all, command) => {
-	logger.log(setStyle('开始巡视', 'bold'));
-	stopPatrol = false;
-	revokeMission();
+	missionPipe.add(taskStartMission);
 })
 ;
 
