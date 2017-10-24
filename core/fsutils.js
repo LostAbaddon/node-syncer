@@ -3,10 +3,14 @@
  * Desc:    文件系统工具
  * Author:	LostAbaddon
  * Version:	0.0.1
- * Date:	2017.10.02
+ * Date:	2017.10.24
  * Note:	mkfolder函数可创建指定目录，且如果该目录的父目录不存在则一并创建。主要解决多个目录同时创建时异步导致的重复创建问题
  * 			存在的问题：创建过程中删除父目录，会导致创建失败
- * 			[TODO]未来有更好的任务管理模块时替换这部分
+ * 			filterPath函数可对路径数组做判断，是文件、目录、不存在还是其它，返回一个JSON对象
+ * 			createFolders函数，批量创建目录，Promise化
+ * 			createEmptyFiles函数，批量创建空文件，Promise化
+ * 			deleteFiles函数，批量删除文件，Promise化
+ * 			deleteFolders函数，批量删除文件夹，Promise化
  */
 
 const fs = require('fs');

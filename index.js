@@ -1569,14 +1569,17 @@ var rtmLauncher = clp({
 .addOption('--files -f <path> >> 查看指定路径下的文件列表')
 .addOption('--all -a >> 显示所有文件与文件夹，不打开则只显示有变化的文件与文件夹')
 .add('delete|del [...files] >> 删除文件列表')
-.addOption('--force -f >> 强制删除整个目录')
 .addOption('--group -g <group> >> 指定分组')
+.addOption('--notforce -nf >> 强制删除整个目录')
 .add('create|new [...files] >> 创建文件列表')
 .addOption('--group -g <group> >> 指定分组')
 .addOption('--folder -f >> 指定创建的是文件夹')
 .add('copy|cp <source> <target> >> 从外源复制文件进来')
 .addOption('--group -g <group> >> 指定分组')
-.addOption('--force -f >> 强制覆盖文件')
+.addOption('--notforce -nf >> 强制覆盖文件')
+.add('move|mv <source> <target> >> 从外源复制文件进来')
+.addOption('--group -g <group> >> 指定分组')
+.addOption('--notforce -nf >> 强制覆盖文件')
 .add('health|ht [duration(^\\d+$|^\\d+\\.\\d*$)=1] >> 查看当前 CPU 与 MEM 使用状态，统计时长单位为秒')
 .addOption('--interval -i [interval(^\\d+$|^\\d+\\.\\d*$)=1] >> 定式更新，更新间隔单位为秒')
 .addOption('--stop -s >> 定制定式更新')
@@ -1681,7 +1684,7 @@ var rtmLauncher = clp({
 		command.showError('不可没有目标路径！');
 		return;
 	}
-	var group = param.group, force = !!param.force;
+	var group = param.group, force = !param.notforce;
 
 	missionPipe.add(deleteFilesAndFolders, syncGroups[group], paths, force);
 	missionPipe.add(revokeMission, true);
@@ -1720,7 +1723,51 @@ var rtmLauncher = clp({
 		return;
 	}
 
-	missionPipe.add(copyFilesFromOutside, source, target, group, !!param.force);
+	missionPipe.add(copyFilesFromOutside, source, target, group, !param.notforce);
+	missionPipe.add(revokeMission, true);
+})
+.on('move', async (param, all, command) => {
+	var group = param.group;
+	if (!group) {
+		command.showError('所属分组参数不能为空！');
+		return;
+	}
+	group = syncGroups[group];
+	if (!group) {
+		command.showError('所选分组不存在！');
+		return;
+	}
+	if (group.mode === WatchMode.NOTREADY) {
+		command.showError('所选分组检测中，请稍后再试！');
+		return;
+	}
+	if (group.mode === WatchMode.WRONG) {
+		command.showError('所选分组异常！');
+		return;
+	}
+	if (group.mode === WatchMode.FILE) {
+		command.showError('不可往文件同步组里复制文件/目录！');
+		return;
+	}
+	var source = param.source;
+	if (!source) {
+		command.showError('不可没有源文件路径！');
+		return;
+	}
+	var target = param.target;
+	if (!target) {
+		command.showError('不可没有目标文件路径！');
+		return;
+	}
+
+	var force = !param.notforce;
+	if (source.substring(0, 1) === '/') {
+		missionPipe.add(copyFilesFromOutside, group.map.source[0] + source, target, group, force);
+	}
+	else {
+		missionPipe.add(copyFilesFromOutside, group.map.source[0] + '/' + source, target, group, force);
+	}
+	missionPipe.add(deleteFilesAndFolders, group, [source], force);
 	missionPipe.add(revokeMission, true);
 })
 .on('stop', (param, all, command) => {
