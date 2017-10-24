@@ -692,6 +692,7 @@ var readJSON = file => new Promise((res, rej) => {
 	});
 });
 var waitTick = async () => new Promise((res, rej) => setImmediate(res));
+var waitMoments = async (ms) => new Promise((res, rej) => setTimeout(res, ms));
 
 // CLI相关
 var originHints = null;
@@ -1582,6 +1583,7 @@ var rtmLauncher = clp({
 .on('command', (param, command) => {
 	if (Object.keys(param).length > 1) return;
 	if (param.mission.length > 0) return;
+	param.no_history = true;
 	logger.error('不存在该指令哦！输入 help 查看命令~');
 })
 .on('done', async params => {

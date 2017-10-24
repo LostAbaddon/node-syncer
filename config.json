@@ -8,8 +8,9 @@
 		"Icon?",
 		"node_modules",
 		"package-lock.json",
-		"/.*\\d+\\..*/",
-		"/.*冲突副本.*/"
+		"/.* \\d+\\..*/",
+		"/.*冲突副本.*/",
+		"commands.history"
 	],
 	"group": {
 		"work": [

@@ -993,12 +993,12 @@ const Parser = config => {
 					rl.close(true);
 				}
 				else {
-					if (cmd === 'help') cmd = '--help';
+					if (!!cmd.match(/^(help |help$)/)) cmd = '--' + cmd;
 					try {
 						let result = command.parse(cmd);
-						if (!result) return { msg: hint.no_such_command };
-						if (result.length <= 1 && result[0].quest === 'global' && result[0].params.length === 0) return { msg: hint.no_such_command };
-						return { nohint: result.nohint, msg: '' };
+						if (!result) return { msg: hint.no_such_command, norecord: true };
+						if (result.length <= 1 && result[0].quest === 'global' && result[0].params.length === 0) return { msg: hint.no_such_command, norecord: true };
+						return { nohint: !!result.nohint, msg: '', norecord: !!result.no_history };
 					}
 					catch (err) {
 						rl.error(err.message);
