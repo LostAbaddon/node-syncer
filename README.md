@@ -12,6 +12,7 @@
 	-	从外部复制文件入库
 	-	添加文件/目录
 	-	删除文件/目录
+	-	移动文件/目录
 	-	强制立即同步
 	-	查看同步历史（上次与全部历史）
 	-	启动与停止巡视
@@ -63,9 +64,10 @@ refresh|re
 start|st
 stop|sp
 list|lt --group|-g <group> --files|-f <path> --all|-a
-delete|del [...files] --group|-g <group>
+delete|del [...files] --group|-g <group> --notforce|-nf
 create|new [...files] --group|-g <group> --folder|-f
-copy|cp <source> <target> --group|-g <group> --force|-f 
+copy|cp <source> <target> --group|-g <group> --notforce|-nf
+move|mv <source> <target> --group|-g <group> --notforce|-nf
 health|ht [duration] --interval|-i [interval] --stop|-s
 history|his --all|-a
 status|stt
@@ -76,22 +78,36 @@ GitHub 风格命令，可多条命令顺序使用。
 
 ----
 
-v1.0.3（开发中）
+v1.0.4（开发中）
 ----
 
 -	巡视延迟
 -	指令的异步管道
 -	历史命令
--	操作历史（开发中）
--	执行态锁定CLI（开发中）
--	连续定时同步时覆盖上一条输出（开发中）
 -	完善指令系统
 	-	启动巡视
 	-	停止巡视
+	-	移动文件/目录
 -	出错重试（开发中）
+-	操作历史（开发中）
+-	执行态锁定CLI（开发中）
+-	连续定时同步时覆盖上一条输出（开发中）
 -	CLI模式下的Tab键补全（开发中）
 -	监控模式下可自动判别文件的删除与改名（开发中）
 -	Socket连接、TCP与UDP连接、Web连接模式（开发中）
+
+----
+
+v1.0.3
+----
+
+-	巡视延迟
+-	指令的异步管道
+-	历史命令
+-	完善指令系统
+	-	启动巡视
+	-	停止巡视
+	-	移动文件/目录
 
 ----
 

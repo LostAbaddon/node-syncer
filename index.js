@@ -13,7 +13,7 @@
  */
 
 const SyncerTitle = '同步者';
-const SyncerVersion = '1.0.3.dev';
+const SyncerVersion = '1.0.3';
 
 const fs = require('fs');
 const Path = require('path');
