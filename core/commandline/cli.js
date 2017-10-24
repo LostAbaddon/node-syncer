@@ -399,6 +399,11 @@ class CLI {
 
 const Intereface = config => {
 	config = config || {};
+	config.history = config.history || {};
+	CommandHistory.delay = config.history.delay || CommandHistory.delay;
+	CommandHistory.room = config.history.room || CommandHistory.room;
+	CommandHistory.limit = config.history.limit || CommandHistory.limit;
+	CommandHistory.storage = config.history.storage || CommandHistory.storage;
 	var cli = new CLI(config.historySize, config.hints);
 	return cli;
 };

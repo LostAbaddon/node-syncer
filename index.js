@@ -1555,6 +1555,9 @@ var rtmLauncher = clp({
 	hint: {
 		welcome: setStyle('欢迎来到同步空间~', 'yellow underline bold'),
 		byebye: setStyle('世界，终结了。。。', 'magenta bold')
+	},
+	historyStorage: {
+		limit: 100
 	}
 })
 .describe('多文件夹自动同步者。\n' + setStyle('当前版本：', 'bold') + 'v' + SyncerVersion)

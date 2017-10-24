@@ -977,8 +977,9 @@ const Parser = config => {
 		}
 		if (config.mode === 'cli') {
 			rl = cli({
-				historySize: CommandHistorySize,
-				hints: hint
+				historySize: config.historySize || CommandHistorySize,
+				hints: hint,
+				history: config.historyStorage
 			})
 			.onRequest(cmd => {
 				var shortcmd = cmd.replace(/ +/g, ' ');
