@@ -50,11 +50,11 @@ const CommandHistory = {
 			res();
 			return;
 		}
-		fs.appendFile(process.env.PWD + CommandHistory.storage, rec.join('\n') + '\n', { encoding: 'utf8' }, err => {
+		fs.appendFile(process.env.PWD + CommandHistory.storage, rec.join('\n') + '\n', { encoding: 'utf8' }, async err => {
 			if (!err) {
 				CommandHistory.records.splice(0, rec.length);
 			}
-			res();
+			setImmediate(res);
 		});
 	}),
 	load: (cli) => new Promise((res, rej) => {
@@ -64,11 +64,12 @@ const CommandHistory = {
 			commands = commands.replace(/^[ \n\r\t]*|[ \n\r\t]*$/g, '');
 			commands = commands.split('\n').map(c => c.trim());
 			if (commands.length > CommandHistory.limit) {
-				commands = commands(0, commands.length - CommandHistory.limit);
+				commands.splice(0, commands.length - CommandHistory.limit);
 			}
 			var last = '', list = [];
 			commands.forEach(c => {
 				if (c === last) return;
+				last = c;
 				list.push(c);
 				cli.history.unshift(c);
 			});
@@ -115,10 +116,10 @@ class CLI {
 		ReadLine.emitKeypressEvents(process.stdin);
 		if (!!process.stdin.setEncoding) process.stdin.setEncoding('utf8');
 		if (!!process.stdin.setRawMode) process.stdin.setRawMode(true);
-		process.stdin.on('keypress', (chunk, key) => {
+		process.stdin.on('keypress', async (chunk, key) => {
 			if (key && key.ctrl && key.name == 'c') {
 				this.waiting = false;
-				this.close();
+				await this.close();
 				setImmediate(() => {
 					if (this.exitCallback) this.exitCallback();
 				});
@@ -221,7 +222,7 @@ class CLI {
 				let result;
 				if (!!this.requestCallback) {
 					result = this.requestCallback(line, this);
-					if (!!result && result.msg.length > 0 && !result.nohint) this.answer(result.msg);
+					if (!!result && result.msg && result.msg.length > 0 && !result.nohint) this.answer(result.msg);
 				}
 				if (!result || !result.nohint) this.hint();
 				if (result.norecord) {
@@ -368,15 +369,18 @@ class CLI {
 			});
 		}
 	}
-	async close (silence) {
-		if (!!this.quitCallback) this.quitCallback(this);
-		if (!silence) this.answer(this.hints.byebye);
-		await CommandHistory.save();
-		setImmediate(() => {
-			this.clear();
-			this.cursor(-9999, 0);
-			this.rl.close();
-			process.stdin.destroy();
+	close (silence) {
+		return new Promise(async (res, rej) => {
+			if (!!this.quitCallback) this.quitCallback(this);
+			if (!silence) this.answer(this.hints.byebye);
+			await CommandHistory.save();
+			res();
+			setImmediate(async () => {
+				this.clear();
+				this.cursor(-9999, 0);
+				await this.rl.close();
+				process.stdin.destroy();
+			});
 		});
 	}
 	onRequest (callback) {

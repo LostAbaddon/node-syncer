@@ -914,6 +914,10 @@ const paramGroupConvert = params => {
 	Object.defineProperty(convert, 'raw', { value: params });
 	return convert;
 };
+const exitProcess = async (cli, silence, leave) => {
+	await cli.close(silence);
+	if (leave) process.exit();
+};
 const Parser = config => {
 	var em = new EventEmitter();
 	var rl = {
@@ -978,20 +982,10 @@ const Parser = config => {
 			})
 			.onRequest(cmd => {
 				var shortcmd = cmd.replace(/ +/g, ' ');
-				if (cmd === 'exit') {
-					rl.close();
-					process.exit();
-				}
-				else if (shortcmd === 'exit -s') {
-					rl.close(true);
-					process.exit();
-				}
-				else if (cmd === 'quit') {
-					rl.close();
-				}
-				else if (shortcmd === 'quit -s') {
-					rl.close(true);
-				}
+				if (cmd === 'exit') exitProcess(rl, false, true);
+				else if (shortcmd === 'exit -s') exitProcess(rl, true, true);
+				else if (cmd === 'quit') exitProcess(rl, false, false);
+				else if (shortcmd === 'quit -s') exitProcess(rl, true, false);
 				else {
 					if (!!cmd.match(/^(help |help$)/)) cmd = '--' + cmd;
 					try {
