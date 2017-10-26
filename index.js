@@ -33,6 +33,7 @@ const logger = global.logger(loglev);
 const configPath = process.cwd() + '/config.json';
 const deamonDuration = 60;
 const deamonDelay = 1;
+const watcherDelay = 200;
 
 // 系统级错误处理
 process.on('unhandledRejection', (reason, p) => {
@@ -491,6 +492,9 @@ class Group {
 				changeList = await this.map.sync(range);
 				await waitTick();
 			}
+			else {
+				await waitTick();
+			}
 			res(changeList);
 		});
 	}
@@ -564,7 +568,10 @@ var scanFolder = (folder, node, path, cb) => {
 	});
 };
 var scanGroup = (group, cb) => {
-	if (group.mode === WatchMode.NOTREADY || group.mode === WatchMode.WRONG) return;
+	if (group.mode === WatchMode.NOTREADY || group.mode === WatchMode.WRONG) {
+		cb();
+		return;
+	}
 	if (group.mode === WatchMode.FILE) {
 		let file = new File('single_file'), fileCount = 0, fileTask = 0;
 		for (let f in group.folders) {
@@ -751,17 +758,79 @@ var deamonWatch = null;
 var configWatch = null;
 var fileWatchers = {};
 var watcherTrigger = null;
-var treeWatcher = (path, isFile) => (stat, file) => {
+var nullifiedFiles = [];
+var hikaruFiles = [];
+var treeWatcher = (path, isDelete, isFile) => (files) => {
 	if (syncConfig.deaf) return;
 	if (handcraftCreating) return;
-	if (checkIgnoreRule(file)) return;
+	if (!isFile) {
+		files = files.filter(p => {
+			p = p.substring(path.length + 1, p.length);
+			var shouldIgnore = false;
+			p.split(Path.sep).some(q => {
+				shouldIgnore = shouldIgnore || checkIgnoreRule(q);
+				return shouldIgnore;
+			});
+			return !shouldIgnore;
+		});
+	}
+	if (files.length === 0) return;
+	if (isDelete) {
+		if (isFile) {
+			if (nullifiedFiles.indexOf(path) < 0) nullifiedFiles.push(path);
+			let index = hikaruFiles.indexOf(path);
+			if (index >= 0) hikaruFiles.splice(index, 1);
+		}
+		else {
+			files.forEach(p => {
+				if (nullifiedFiles.indexOf(p) < 0) nullifiedFiles.push(p);
+				var index = hikaruFiles.indexOf(p);
+				if (index >= 0) hikaruFiles.splice(index, 1);
+			});
+		}
+	}
+	else {
+		if (isFile) {
+			if (hikaruFiles.indexOf(path) < 0) hikaruFiles.push(path);
+			let index = nullifiedFiles.indexOf(path);
+			if (index >= 0) nullifiedFiles.splice(index, 1);
+		}
+		else {
+			files.forEach(p => {
+				if (hikaruFiles.indexOf(p) < 0) hikaruFiles.push(p);
+				var index = nullifiedFiles.indexOf(p);
+				if (index >= 0) nullifiedFiles.splice(index, 1);
+			});
+		}
+	}
 	if (!!watcherTrigger) clearTimeout(watcherTrigger);
 	watcherTrigger = setTimeout(() => {
-		changePrompt(syncConfig.syncPrompt);
-		logger.log(setStyle('发现文件改动', 'blue bold') + '（' + timeNormalize() + '）：' + path + (!!isFile ? '' : '/' + file));
-		changePrompt();
-		launchMission(true);
-	}, syncConfig.delay * 1000);
+		handcraftCreating = true;
+		if (nullifiedFiles.length > 0) {
+			let message = [];
+			message.push(setStyle('发现文件被删除', 'red bold') + '（' + timeNormalize() + '）：');
+			nullifiedFiles.forEach(p => message.push('    ' + p));
+			changePrompt(syncConfig.syncPrompt);
+			logger.log(message.join('\n'));
+			changePrompt();
+			missionPipe.add(deleteFilesAndFolders, null, nullifiedFiles.copy(), true, true);
+			nullifiedFiles.splice(0, nullifiedFiles.length);
+		}
+		if (hikaruFiles.length > 0) {
+			let message = [];
+			message.push(setStyle('发现文件改动', 'blue bold') + '（' + timeNormalize() + '）：');
+			hikaruFiles.forEach(p => message.push('    ' + p));
+			changePrompt(syncConfig.syncPrompt);
+			logger.log(message.join('\n'));
+			changePrompt();
+			hikaruFiles.splice(0, hikaruFiles.length);
+		}
+		missionPipe.add(launchMission, true);
+		missionPipe.add(() => {
+			handcraftCreating = false;
+		});
+		missionPipe.launch();
+	}, syncConfig.delay * 1000 - watcherDelay);
 };
 var razeAllWatchers = () => {
 	if (!!watcherTrigger) clearTimeout(watcherTrigger);
@@ -782,7 +851,9 @@ var watchTrees = groups => {
 				if (!!fileWatchers[path]) return;
 				var watch;
 				try {
-					watch = fs.watch(path, treeWatcher(path, true));
+					watch = fs.watchFolderAndFile(path, watcherDelay, true)
+						.onCreate(treeWatcher(path, false, true))
+						.onDelete(treeWatcher(path, true, true));
 				}
 				catch (err) {
 					logger.error(err.message);
@@ -796,7 +867,9 @@ var watchTrees = groups => {
 			if (!!fileWatchers[path]) return;
 			var watch;
 			try {
-				watch = fs.watch(path, { recursive: true }, treeWatcher(path));
+				watch = fs.watchFolderAndFile(path, watcherDelay)
+					.onCreate(treeWatcher(path, false, false))
+					.onDelete(treeWatcher(path, true, false));
 			}
 			catch (err) {
 				logger.error(err.message);
@@ -906,7 +979,7 @@ var createFilesAndFolders = (group, paths, isFolder, cb) => new Promise(async (r
 	res();
 	if (cb instanceof Function) cb();
 });
-var deleteFilesAndFolders = (group, paths, force, cb) => new Promise(async (res, rej) => {
+var deleteFilesAndFolders = (group, paths, force, ignoreMissing, cb) => new Promise(async (res, rej) => {
 	handcraftCreating = true;
 
 	var files = [], range, stat;
@@ -924,7 +997,7 @@ var deleteFilesAndFolders = (group, paths, force, cb) => new Promise(async (res,
 		files = paths.map(p => p.replace(/^~[\/\\]/, process.env.HOME + Path.sep));
 	}
 	stat = await fs.filterPath(files); // 拆分出文件和目录
-	if (stat.files.length + stat.folders.length === 0) {
+	if (!ignoreMissing && stat.files.length + stat.folders.length === 0) {
 		logger.log(setStyle('无文件或目录需要删除', 'green bold'));
 		await waitTick();
 		handcraftCreating = false;
@@ -935,6 +1008,9 @@ var deleteFilesAndFolders = (group, paths, force, cb) => new Promise(async (res,
 	paths = [];
 	stat.files.forEach(f => paths.push(f));
 	stat.folders.forEach(f => paths.push(f));
+	if (!!ignoreMissing) {
+		stat.nonexist.forEach(f => paths.push(f));
+	}
 
 	// 找出所有组中被同步到的所有文件与文件夹
 	var changed = true;
@@ -1047,9 +1123,11 @@ var launchSync = groups => new Promise((res, rej) => {
 		changeCount ++;
 		group = groups[group];
 		var list = await group.sync();
-		changeGroup[group.name] = list[0];
-		failGroup[group.name] = list[1];
-		combileList(list, changeList, failList);
+		if (!!list) {
+			changeGroup[group.name] = list[0];
+			failGroup[group.name] = list[1];
+			combileList(list, changeList, failList);
+		}
 		changeCount --;
 		if (changeCount > 0) return;
 		res([changeGroup, failGroup, changeList, failList]);
@@ -1092,6 +1170,9 @@ var launchMission = async notFirstLaunch => {
 		if (list[2].length + list[3].length === 0) break;
 
 		for (let group in syncGroups) {
+			if (syncGroups[group].mode === WatchMode.NOTREADY || syncGroups[group].mode === WatchMode.WRONG) {
+				continue;
+			}
 			list[0][group].map(p => {
 				if (changeList[0][group].indexOf(p) < 0) changeList[0][group].push(p);
 			});

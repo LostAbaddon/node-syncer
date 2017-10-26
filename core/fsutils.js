@@ -345,3 +345,52 @@ fs.deleteFolders = (files, force, logger) => new Promise(async (res, rej) => {
 	else result = await deleteFolders(files, logger);
 	res(result);
 });
+
+class FolderWatcher {
+	constructor (folder, delay, isFile) {
+		this.changeList = [];
+		try {
+			this.watcher = fs.watch(folder, { recursive: true }, (stat, file) => {
+				if (isFile) file = folder;
+				else file = folder + Path.sep + file;
+				if (this.changeList.indexOf(file) < 0) this.changeList.push(file);
+				if (!!this.timer) clearTimeout(this.timer);
+				this.timer = setTimeout(async () => {
+					var list = this.changeList.copy();
+					this.changeList.splice(0, this.changeList.length);
+					list = await fs.filterPath(list);
+					var result = { delete: list.nonexist, create: [] };
+					list.folders.forEach(p => result.create.push(p));
+					list.files.forEach(p => result.create.push(p));
+					if (!!this.callbacks.onCreate && result.create.length > 0) this.callbacks.onCreate(result.create);
+					if (!!this.callbacks.onDelete && result.delete.length > 0) this.callbacks.onDelete(result.delete);
+				}, this.delay);
+			});
+		}
+		catch (err) {
+			this.watcher = null;
+			throw err;
+		}
+		this.timer = null;
+		this.delay = delay || 1000;
+		this.callbacks = { onCreate: null, onDelete: null };
+	}
+	onCreate (cb) {
+		if (cb instanceof Function) this.callbacks.onCreate = cb;
+		return this;
+	}
+	onDelete (cb) {
+		if (cb instanceof Function) this.callbacks.onDelete = cb;
+		return this;
+	}
+	close () {
+		if (!!this.timer) clearTimeout(this.timer);
+		if (!!this.watcher) this.watcher.close();
+	}
+}
+fs.watchFolderAndFile = (folder, delay, isFile, onCreate, onDelete) => {
+	var watcher = new FolderWatcher(folder, delay, isFile);
+	if (onCreate instanceof Function) watcher.onCreate(onCreate);
+	if (onDelete instanceof Function) watcher.onDelete(onDelete);
+	return watcher;
+};

@@ -44,6 +44,12 @@ class Pipe {
 			get: () => running,
 			set: value => running = value
 		});
+		var reses = [];
+		Object.defineProperty(this, 'reses', {
+			configurable: false,
+			enumerable: false,
+			get: () => reses
+		});
 	}
 	add (task, ...args) {
 		if (!(task instanceof Function)) return this;
@@ -52,6 +58,7 @@ class Pipe {
 	}
 	launch () {
 		return new Promise(async (res, rej) => {
+			this.reses.push(res);
 			if (this.running) return;
 			this.running = true;
 			var event = new PipeEvent(this);
@@ -69,7 +76,7 @@ class Pipe {
 			}
 			this.onDone(event);
 			this.running = false;
-			res();
+			this.reses.forEach(res => res());
 		});
 	}
 	get length () {

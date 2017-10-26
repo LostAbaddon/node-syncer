@@ -33,6 +33,10 @@
 		"dailylife": [
 			"~/Documents/MyWorld/生活记录.xlsx",
 			"~/Library/Mobile Documents/com~apple~CloudDocs/Documents/生活记录.xlsx"
+		],
+		"testFile": [
+			"~/Documents/MyWorld/Codes/Syncer/tmp/a.js",
+			"~/Documents/MyWorld/Codes/Syncer/tmp/b.js"
 		]
 	},
 	"monitor": 600,
