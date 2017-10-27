@@ -6,7 +6,7 @@
  * Date:	2017.10.20
  */
 
-const EM = require('../eventManager');
+const EM = require('./eventManager');
 
 const private = new WeakMap();
 class PipeEvent extends EM.EventData {

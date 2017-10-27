@@ -15,7 +15,7 @@
 
 const fs = require('fs');
 const Path = require('path');
-const setStyle = require('./setConsoleStyle');
+const setStyle = require('./commandline/setConsoleStyle');
 
 const IDLE = Symbol('IDLE');
 const BUSY = Symbol('BUSY');

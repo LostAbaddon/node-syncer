@@ -23,10 +23,10 @@ require('./core/logger');
 require('./core/fsutils');
 require('./core/events/pipe');
 
+const getHealth = require('./core/health');
+const setStyle = require('./core/commandline/setConsoleStyle');
 const clp = require('./core/commandline/commander');
 const getCLLength = clp.getCLLength;
-const getHealth = require('./core/health');
-const setStyle = require('./core/setConsoleStyle');
 const timeNormalize = global.Utils.getTimeString;
 const loglev = (process.env.NODE_ENV === 'production' || process.env.NODE_ENV === 'prod') ? 3 : 1;
 const logger = global.logger(loglev);
@@ -997,7 +997,13 @@ var deleteFilesAndFolders = (group, paths, force, ignoreMissing, cb) => new Prom
 		files = paths.map(p => p.replace(/^~[\/\\]/, process.env.HOME + Path.sep));
 	}
 	stat = await fs.filterPath(files); // 拆分出文件和目录
-	if (!ignoreMissing && stat.files.length + stat.folders.length === 0) {
+	if (ignoreMissing) {
+		files = stat.nonexist.length + stat.files.length + stat.folders.length;
+	}
+	else {
+		files = stat.files.length + stat.folders.length;
+	}
+	if (files === 0) {
 		logger.log(setStyle('无文件或目录需要删除', 'green bold'));
 		await waitTick();
 		handcraftCreating = false;

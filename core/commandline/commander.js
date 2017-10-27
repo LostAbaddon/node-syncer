@@ -38,7 +38,7 @@
 const EventEmitter = require('events');
 
 require('../extend');
-const setStyle = require('../setConsoleStyle');
+const setStyle = require('./setConsoleStyle');
 const cli = require('./cli');
 
 const RegMonoWidthChars = /[\x00-\xff–]+/g;

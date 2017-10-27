@@ -22,8 +22,8 @@ require('./datetime');
 require('./logger');
 require('./algorithm');
 require('./moduleManager');
-require('./eventManager');
-require('./threadManager');
+require('./events/eventManager');
+require('./threads/threadManager');
 
 global.Utils.preparePath = async (path, cb) => {
 	var has = FS.access(path, (err) => {

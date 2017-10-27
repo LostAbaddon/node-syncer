@@ -6,7 +6,7 @@
  * Date:	2017.09.27
  */
 
-const setStyle = require('./setConsoleStyle');
+const setStyle = require('./commandline/setConsoleStyle');
 const timeNormalize = global.Utils.getTimeString;
 global.logger = (loglev, colors) => {
 	colors = colors || global.logger.Color.copy();
