@@ -1268,6 +1268,7 @@ var launchShowDiff = async () => {
 
 // 任务管理
 var missionPipe = new global.Utils.Events.Pipe();
+missionPipe.lookStart(() => rtmLauncher.stopInput()).lookDone(() => rtmLauncher.resumeInput());
 var taskRefresh = () => new Promise(async (res, rej) => {
 	await revokeMission();
 	res();

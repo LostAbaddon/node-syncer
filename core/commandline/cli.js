@@ -225,7 +225,7 @@ class CLI {
 					if (!!result && result.msg && result.msg.length > 0 && !result.nohint) this.answer(result.msg);
 				}
 				if (!result || !result.nohint) this.hint();
-				if (result.norecord) {
+				if (!!result && result.norecord) {
 					rl.history.shift();
 				}
 				else {
@@ -277,6 +277,27 @@ class CLI {
 	cursor (dx, dy) {
 		ReadLine.moveCursor(process.stdin, dx, dy);
 		return this;
+	}
+	stopInput () {
+		return this.waitEnter(" ", "XXXX");
+	}
+	resumeInput () {
+		setImmediate(() => {
+			this.cursor(-9999, 0);
+			this.clear();
+			console.log('');
+			this.waiting = false;
+			this.shouldStopWaiting = false;
+			this.hint();
+			this.clear(1);
+			setImmediate(() => {
+				this.cursor(-9999, 0);
+				this.clear();
+				console.log('');
+				this.hint();
+				this.clear(1);
+			});
+		});
 	}
 	waitEnter (prompt, key) {
 		return new Promise((res, rej) => {

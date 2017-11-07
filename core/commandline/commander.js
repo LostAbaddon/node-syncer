@@ -972,7 +972,6 @@ const Parser = config => {
 			let args = process.argv.copy();
 			args.splice(0, 2);
 			args = args.join(' ');
-			// console.log(args);
 			command.parse(args);
 		}
 		if (config.mode === 'cli') {
@@ -1011,6 +1010,8 @@ const Parser = config => {
 				em.emit('exit', command);
 			});
 			command.cli = rl;
+			command.stopInput = () => rl.stopInput();
+			command.resumeInput = () => rl.resumeInput();
 
 			rl.answer('游戏开始喽~~~~');
 		}
