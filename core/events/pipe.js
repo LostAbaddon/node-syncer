@@ -21,7 +21,7 @@ class PipeEvent extends EM.EventData {
 	}
 }
 class Pipe {
-	constructor (reverse = false) {
+	constructor (reverse = false, auto = false) {
 		new EM(this, [
 			'start',
 			'step',
@@ -37,6 +37,11 @@ class Pipe {
 			configurable: false,
 			enumerable: false,
 			get: () => reverse
+		});
+		Object.defineProperty(this, 'auto', {
+			configurable: false,
+			enumerable: false,
+			get: () => auto
 		});
 		var running = false;
 		Object.defineProperty(this, 'running', {
@@ -54,6 +59,7 @@ class Pipe {
 	add (task, ...args) {
 		if (!(task instanceof Function)) return this;
 		this.pipe.push([task, args]);
+		if (this.auto) this.launch();
 		return this;
 	}
 	launch () {
