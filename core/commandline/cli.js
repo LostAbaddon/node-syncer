@@ -279,13 +279,14 @@ class CLI {
 		return this;
 	}
 	stopInput () {
+		this.isInputStopped = true;
 		return this.waitEnter(" ", "XXXX");
 	}
 	resumeInput () {
 		setImmediate(() => {
 			this.cursor(-9999, 0);
 			this.clear();
-			console.log('');
+			// console.log('');
 			this.waiting = false;
 			this.shouldStopWaiting = false;
 			this.hint();
@@ -293,9 +294,10 @@ class CLI {
 			setImmediate(() => {
 				this.cursor(-9999, 0);
 				this.clear();
-				console.log('');
+				// console.log('');
 				this.hint();
 				this.clear(1);
+				this.isInputStopped = false;
 			});
 		});
 	}

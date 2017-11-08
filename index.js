@@ -1149,7 +1149,7 @@ var revokeMission = (notFirstLaunch, cb) => new Promise(async (res, rej) => {
 	res();
 	if (cb instanceof Function) cb();
 });
-var launchMission = async notFirstLaunch => {
+var launchMission = notFirstLaunch => new Promise(async (res, rej) => {
 	var log, message = [''];
 	if (!!notFirstLaunch) {
 		log = text => message.push(text);
@@ -1230,7 +1230,9 @@ var launchMission = async notFirstLaunch => {
 			launchMission(true);
 		}, syncConfig.duration * 1000);
 	}
-};
+
+	res();
+});
 var launchShowDiff = async () => {
 	var log = console.log;
 
@@ -1610,10 +1612,17 @@ var cmdLauncher = clp({
 			}
 		}
 
-		launchMission(true);
+		var isInputStopped = rtmLauncher.isInputStopped;
+		if (!isInputStopped) rtmLauncher.stopInput();
+		await launchMission(true);
+		if (!isInputStopped) rtmLauncher.resumeInput();
 	});
 
-	launchMission();
+	var isInputStopped = rtmLauncher.isInputStopped;
+	if (!isInputStopped) rtmLauncher.stopInput();
+	await launchMission();
+	if (!isInputStopped) rtmLauncher.resumeInput();
+	// launchMission();
 })
 ;
 

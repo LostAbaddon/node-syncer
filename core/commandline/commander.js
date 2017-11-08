@@ -1022,6 +1022,11 @@ const Parser = config => {
 		if (!silence) showHint(hint.byebye);
 		rl.close();
 	};
+	Object.defineProperty(command, 'isInputStopped', {
+		configurable: false,
+		enumerable: true,
+		get: () => rl.isInputStopped || false
+	});
 	return command;
 };
 Parser.Params = Params;
