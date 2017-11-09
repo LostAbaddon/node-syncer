@@ -112,6 +112,7 @@ class CLI {
 		this.processLength = 0;
 		this.processPercent = [];
 		this.waitingInput = false;
+		this.shouldClearLine = false;
 
 		ReadLine.emitKeypressEvents(process.stdin);
 		if (!!process.stdin.setEncoding) process.stdin.setEncoding('utf8');
@@ -124,7 +125,15 @@ class CLI {
 					if (this.exitCallback) this.exitCallback();
 				});
 			}
-			if (!this.waiting) return;
+			if (!this.waiting) {
+				if (key && key.ctrl && key.name == 'd') {
+					this.shouldClearLine = true;
+					setImmediate(() => {
+						this.rl.write('\r');
+					});
+				}
+				return;
+			}
 			if (key.name !== 'return') this.waitingInput = true;
 			var optionIndex = this.waitingOptions.indexOf(key.name);
 			if (key.name !== this.waitingKey && optionIndex < 0) {
@@ -198,6 +207,15 @@ class CLI {
 		this.rl = rl;
 
 		rl.on('line', line => {
+			if (this.shouldClearLine) {
+				this.shouldClearLine = false;
+				if (line.length > 0) {
+					this.rl.write('\r');
+				}
+				this.cursor(0, -1);
+				this.hint();
+				return;
+			}
 			if (this.shouldStopWaiting && this.waiting) {
 				this.waitingInput = false;
 				this.waiting = false;
@@ -272,34 +290,33 @@ class CLI {
 	}
 	clear (dir) {
 		ReadLine.clearLine(process.stdin, dir || 0);
+		// if (process.stdin.isTTY) try {
+		// 	ReadLine.clearLine(process.stdin, dir || 0);
+		// }
+		// catch (err) {}
 		return this;
 	}
 	cursor (dx, dy) {
 		ReadLine.moveCursor(process.stdin, dx, dy);
+		// if (process.stdin.isTTY) try {
+		// 	ReadLine.moveCursor(process.stdin, dx, dy);
+		// }
+		// catch (err) {}
 		return this;
 	}
 	stopInput () {
 		this.isInputStopped = true;
-		return this.waitEnter(" ", "XXXX");
+		process.stdin.pause();
+		return this;
 	}
 	resumeInput () {
+		process.stdin.resume();
+		this.isInputStopped = false;
+		this.shouldClearLine = true;
 		setImmediate(() => {
-			this.cursor(-9999, 0);
-			this.clear();
-			// console.log('');
-			this.waiting = false;
-			this.shouldStopWaiting = false;
-			this.hint();
-			this.clear(1);
-			setImmediate(() => {
-				this.cursor(-9999, 0);
-				this.clear();
-				// console.log('');
-				this.hint();
-				this.clear(1);
-				this.isInputStopped = false;
-			});
+			this.rl.write('\r');
 		});
+		return this;
 	}
 	waitEnter (prompt, key) {
 		return new Promise((res, rej) => {

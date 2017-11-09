@@ -941,6 +941,7 @@ const Parser = config => {
 	command.showPrefix = text => rl.hint(text);
 	command.showHint = text => rl.answer(text);
 	command.showError = text => rl.error(text);
+	command.cursor = (...args) => rl.cursor(...args);
 
 	command.parse = cmds => {
 		var helpMode = !!(' ' + cmds + ' ').match(/ (\-\-help|\-h) /);

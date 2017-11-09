@@ -66,6 +66,7 @@ var syncConfig = {
 var syncGroups = {};
 var handcraftCreating = false;
 var stopPatrol = false;
+var autoTimerCount = 0;
 
 // 符号相关
 var setSymbols = (host, symbols) => {
@@ -1214,10 +1215,13 @@ var launchMission = notFirstLaunch => new Promise(async (res, rej) => {
 	}
 	hasChange = hasChange > 0;
 
-	if (!!notFirstLaunch && hasChange) {
-		changePrompt(syncConfig.syncPrompt);
-		logger.log(message.join('\n        '));
-		changePrompt();
+	if (hasChange) {
+		autoTimerCount = 0;
+		if (!!notFirstLaunch) {
+			changePrompt(syncConfig.syncPrompt);
+			logger.log(message.join('\n        '));
+			changePrompt();
+		}
 	}
 
 	if (syncConfig.deamon && !stopPatrol) {
@@ -1225,7 +1229,16 @@ var launchMission = notFirstLaunch => new Promise(async (res, rej) => {
 		if (!!deamonWatch) clearTimeout(deamonWatch);
 		deamonWatch = setTimeout(() => {
 			changePrompt(syncConfig.syncPrompt);
-			logger.log(setStyle('定时更新喽~~~', 'blue bold') + '      ' + timeNormalize());
+			autoTimerCount ++;
+			var text;
+			if (autoTimerCount === 1) {
+				text = '定时更新喽~~~';
+			}
+			else {
+				text = '定时更新喽~~~    (X' + autoTimerCount + ')';
+				rtmLauncher.cursor(-99999, -1);
+			}
+			logger.log(setStyle(text, 'blue bold') + String.blank(36 - getCLLength(text)) + timeNormalize());
 			changePrompt();
 			launchMission(true);
 		}, syncConfig.duration * 1000);
@@ -1412,6 +1425,8 @@ var taskShowList = (group, path, showAll) => new Promise(async (res, rej) => {
 		logger.log(message.join('\n'));
 	}
 
+	autoTimerCount = 0;
+
 	res();
 });
 var taskShowHealth = (duration, interval, stop) => new Promise(async (res, rej) => {
@@ -1432,6 +1447,7 @@ var taskShowHealth = (duration, interval, stop) => new Promise(async (res, rej) 
 		timer = null;
 		await waitTick();
 		showHealth(result, rtmLauncher);
+		autoTimerCount = 0;
 		res();
 	});
 	if (!isNaN(interval)) {
@@ -1444,6 +1460,8 @@ var taskShowHealth = (duration, interval, stop) => new Promise(async (res, rej) 
 	else if (stop) {
 		if (!!healthWatcher) clearInterval(healthWatcher);
 	}
+
+	autoTimerCount = 0;
 });
 var taskShowStatus = () => new Promise(async (res, rej) => {
 	var message = [ setStyle('当前同步者配置：', 'bold') ], title, padding = 20;
@@ -1467,6 +1485,7 @@ var taskShowStatus = () => new Promise(async (res, rej) => {
 	message.push('    ' + setStyle(title, 'bold') + String.blank(padding - getCLLength(title)) + (syncConfig.socket ? setStyle('开启', 'green') : '关闭'));
 	message.push('    分组情况请用 list 命令查看。');
 	logger.log(message.join('\n'));
+	autoTimerCount = 0;
 	res();
 });
 var taskShowHistory = showAll => new Promise(async (res, rej) => {
@@ -1495,17 +1514,20 @@ var taskShowHistory = showAll => new Promise(async (res, rej) => {
 		message.push('        ' + p + String.blank(len - line) + '（' + timeNormalize(path[1]) + '）');
 	});
 	logger.log(message.join('\n'));
+	autoTimerCount = 0;
 	res();
 });
 var taskStopMission = () => new Promise(async (res, rej) => {
 	logger.log(setStyle('停止巡视', 'bold'));
 	stopPatrol = true;
 	stopMission();
+	autoTimerCount = 0;
 	res();
 });
 var taskStartMission = () => new Promise(async (res, rej) => {
 	logger.log(setStyle('开始巡视', 'bold'));
 	stopPatrol = false;
+	autoTimerCount = 0;
 	revokeMission();
 	res();
 });
@@ -1622,7 +1644,6 @@ var cmdLauncher = clp({
 	if (!isInputStopped) rtmLauncher.stopInput();
 	await launchMission();
 	if (!isInputStopped) rtmLauncher.resumeInput();
-	// launchMission();
 })
 ;
 
@@ -1688,6 +1709,7 @@ var rtmLauncher = clp({
 	if (param.mission.length > 0) return;
 	param.no_history = true;
 	logger.error('不存在该指令哦！输入 help 查看命令~');
+	autoTimerCount = 0;
 })
 .on('done', async params => {
 	missionPipe.launch();
