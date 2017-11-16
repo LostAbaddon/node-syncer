@@ -182,3 +182,7 @@ class FiniteStateMachine extends EM.AsyncEventManager {
 	}
 }
 FiniteStateMachine.Event = FSMEvent;
+
+module.exports = FiniteStateMachine;
+global.Utils = global.Utils || {};
+global.Utils.FiniteStateMachine = FiniteStateMachine;
