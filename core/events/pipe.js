@@ -1,9 +1,9 @@
 /**
  * Name:	Aync Pipe Manager
- * Desc:    异步事件管道
+ * Desc:    异步事件管道以及同步堡，同步垒支持优先级
  * Author:	LostAbaddon
- * Version:	0.0.1
- * Date:	2017.10.20
+ * Version:	0.0.3
+ * Date:	2017.11.16
  */
 
 const EM = require('./eventManager');
@@ -96,7 +96,7 @@ class Pipe {
 }
 
 class BarrierKey {
-	constructor (barrier) {
+	constructor (barrier, priority) {
 		if (!(barrier instanceof Barrier)) return;
 		this.barrier = barrier;
 		var key = Symbol();
@@ -104,6 +104,11 @@ class BarrierKey {
 			configurable: false,
 			enumerable: true,
 			get: () => key
+		});
+		Object.defineProperty(this, 'priority', {
+			configurable: false,
+			enumerable: true,
+			get: () => priority
 		});
 	}
 	solve () {
@@ -133,8 +138,8 @@ class Barrier {
 			get: () => worker
 		});
 	}
-	request () {
-		var key = new BarrierKey(this);
+	request (priority) {
+		var key = new BarrierKey(this, priority || 0);
 		this.barrier.push(key.key);
 		return key;
 	}
@@ -157,10 +162,11 @@ class Barrier {
 				return;
 			}
 			this.worker.splice(index, 1);
-			this.worker.waiters.push(res);
+			this.worker.waiters.push([res, key.priority]);
 			this.onStep(this);
 			if (this.worker.length === 0) {
-				this.worker.waiters.forEach(res => res());
+				this.worker.waiters.sort((ka, kb) => kb[1] - ka[1]);
+				this.worker.waiters.forEach(res => res[0]());
 				this.worker.waiters.splice(0, this.worker.waiters.length);
 				this.onDone(this);
 			}

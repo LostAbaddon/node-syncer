@@ -2,8 +2,8 @@
  * Name:	Auxillary Utils and Extends
  * Desc:    常用基础类拓展
  * Author:	LostAbaddon
- * Version:	0.0.2
- * Date:	2017.09.23
+ * Version:	0.0.3
+ * Date:	2017.11.09
  */
 
 // Strng Extends
@@ -58,3 +58,40 @@ Array.prototype.copy = function () {
 Object.defineProperty(Object.prototype, 'copy', { enumerable: false });
 Object.defineProperty(Object.prototype, 'extent', { enumerable: false });
 Object.defineProperty(Array.prototype, 'copy', { enumerable: false });
+
+// Class extends
+
+Object.prototype.isSubClassOf = function (target) {
+	if (typeof this !== 'function') return false;
+	var cls = this;
+	while (!!cls) {
+		if (cls === target) return true;
+		cls = Object.getPrototypeOf(cls);
+	}
+	return false;
+};
+Object.defineProperty(Object.prototype, 'isSubClassOf', { enumerable: false });
+
+// Symbol extends
+
+Symbol.setSymbols = (host, symbols) => {
+	var symb2name = {};
+	var str2name = {};
+	symbols.forEach(symbol => {
+		symbol = symbol.split('|');
+		if (symbol.length === 0) return;
+		if (symbol.length < 2) symbol[1] = symbol[0];
+		var name = symbol[1];
+		symbol = symbol[0];
+		var sym = Symbol(symbol);
+		symb2name[sym] = name;
+		str2name[symbol] = name;
+		Object.defineProperty(host, symbol, {
+			value: sym,
+			configurable: false,
+			enumerable: true
+		});
+	});
+	host.toString = symbol => symb2name[symbol] || str2name[symbol] || 'No Such Symbol';
+};
+Symbol.is = symbol => (symbol.__proto__ === Symbol.prototype) || (typeof symbol === 'symbol');

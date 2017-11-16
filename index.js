@@ -22,6 +22,7 @@ require('./core/datetime');
 require('./core/logger');
 require('./core/fsutils');
 require('./core/events/pipe');
+require('./core/events/finiteStateMachine');
 
 const getHealth = require('./core/health');
 const setStyle = require('./core/commandline/setConsoleStyle');
@@ -69,22 +70,12 @@ var stopPatrol = false;
 var autoTimerCount = 0;
 
 // 符号相关
-var setSymbols = (host, symbols) => {
-	symbols.map(symbol => {
-		symbol = symbol.toUpperCase();
-		Object.defineProperty(host, symbol, {
-			value: Symbol(symbol),
-			configurable: false,
-			enumerable: true
-		});
-	});
-};
 WatchMode = {};
-setSymbols(WatchMode, ['NOTREADY', 'FOLDER', 'FILE', 'WRONG']);
+Symbol.setSymbols(WatchMode, ['NOTREADY', 'FOLDER', 'FILE', 'WRONG']);
 FolderState = {};
-setSymbols(FolderState, ['NOTREADY', 'NOTEXIST', 'EXIST']);
+Symbol.setSymbols(FolderState, ['NOTREADY', 'NOTEXIST', 'EXIST']);
 SyncState = {};
-setSymbols(SyncState, ['SYNCED', 'LACK', 'UNSYNCED', 'LACKANDUNSYNCED']);
+Symbol.setSymbols(SyncState, ['SYNCED', 'LACK', 'UNSYNCED', 'LACKANDUNSYNCED']);
 SyncState.Styles = {
 	SYNCED: 'green bold',
 	UNSYNCED: 'red bold',
