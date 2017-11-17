@@ -22,7 +22,10 @@ require('./core/datetime');
 require('./core/logger');
 require('./core/fsutils');
 require('./core/events/pipe');
-require('./core/events/finiteStateMachine');
+
+// require('./core/events/finiteStateMachine');
+// require('./core/events/boardcast');
+// return;
 
 const getHealth = require('./core/health');
 const setStyle = require('./core/commandline/setConsoleStyle');

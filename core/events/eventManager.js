@@ -50,7 +50,7 @@ class EventData {
 	}
 }
 class EventManager {
-	constructor (host, events, eventClass) {
+	constructor (host, events, eventClass, silence = false) {
 		if (!events && host instanceof Array) {
 			eventClass = events
 			events = host;
@@ -67,6 +67,7 @@ class EventManager {
 		Object.defineProperty(this, '_ee', { configurable: false, value: _ee });
 		Object.defineProperty(this, '_events', { configurable: false, value: _events });
 		Object.defineProperty(this, '_eventClass', { configurable: false, value: _eventClass });
+		Object.defineProperty(this, 'silence', { configurable: false, enumerable: true, get: () => silence });
 
 		if (!!host) {
 			Object.defineProperty(this, 'host', { configurable: false, value: host });
@@ -79,7 +80,7 @@ class EventManager {
 			if (!host.events) Object.defineProperty(host, 'events', { value: self.events });
 		}
 
-		(events || []).map(e => {
+		if (!silence) (events || []).map(e => {
 			createHooker(this, e);
 			createEmitter(this, e);
 		});
@@ -94,7 +95,7 @@ class EventManager {
 		this._events[eventName].cbs.push(cb);
 		this._events[eventName].is_once.push(false);
 		this._ee.on(eventName, cb);
-		createEmitter(this, eventName);
+		if (!this.silence) createEmitter(this, eventName);
 		return this;
 	}
 	once (eventName, callback) {
@@ -159,7 +160,7 @@ class EventManager {
 	}
 };
 class AsyncEventManager {
-	constructor (host, events, eventClass) {
+	constructor (host, events, eventClass, silence = false) {
 		if (!events && host instanceof Array) {
 			eventClass = events
 			events = host;
@@ -174,6 +175,7 @@ class AsyncEventManager {
 		}
 		Object.defineProperty(this, '_events', { configurable: false, value: _events });
 		Object.defineProperty(this, '_eventClass', { configurable: false, value: _eventClass });
+		Object.defineProperty(this, 'silence', { configurable: false, enumerable: true, get: () => silence });
 
 		if (!!host) {
 			Object.defineProperty(this, 'host', { configurable: false, value: host });
@@ -186,7 +188,7 @@ class AsyncEventManager {
 			if (!host.events) Object.defineProperty(host, 'events', { value: self.events });
 		}
 
-		(events || []).map(e => {
+		if (!silence) (events || []).map(e => {
 			createHooker(this, e);
 			createEmitter(this, e);
 		});
@@ -197,7 +199,7 @@ class AsyncEventManager {
 	on (eventName, callback) {
 		this._events[eventName] = this._events[eventName] || [];
 		this._events[eventName].push([callback, false]);
-		createEmitter(this, eventName);
+		if (!this.silence) createEmitter(this, eventName);
 		return this;
 	}
 	once (eventName, callback) {
